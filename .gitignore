@@ -1,0 +1,6 @@
+/dist/*
+!/dist/wingman-ai.zip
+/.reference/
+*.log
+.env
+.env.*

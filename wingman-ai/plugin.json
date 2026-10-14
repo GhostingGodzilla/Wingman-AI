@@ -1,0 +1,13 @@
+{
+    "id": "wingman-ai",
+    "name": "Wingman AI",
+    "author": "GhostingGodzilla",
+    "version": "0.1.0",
+    "description": "Watch a server startup, explain errors, and suggest fixes from its console output.",
+    "category": "plugin",
+    "namespace": "Pelican\\AiHelpAssistant",
+    "class": "AiHelpAssistantPlugin",
+    "panels": ["server"],
+    "panel_version": "1.0.0-rc.1",
+    "api_version": 1
+}
