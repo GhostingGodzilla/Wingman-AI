@@ -259,6 +259,17 @@ $tests['settings save through encrypted private storage and never refill the API
     expect($settings->get()['api_key'] === '', 'Explicit key removal was ignored.');
 };
 
+$tests['automatic protection defaults on and its disable and report limits survive settings saves'] = static function (): void {
+    File::$files = [];
+    $settings = new AssistantSettings();
+    expect($settings->get()['automatic_enabled'] === true, 'New installations did not enable automatic protection.');
+    $settings->save(settingsForm(['automatic_enabled' => false, 'auto_daily_limit' => '7', 'auto_cooldown_seconds' => '600']));
+    $saved = $settings->get();
+    expect($saved['automatic_enabled'] === false, 'Disabling automatic protection did not persist.');
+    expect($saved['auto_daily_limit'] === 7 && $saved['auto_cooldown_seconds'] === 600, 'Automatic limits did not persist as integers.');
+    expect($settings->formData()['automatic_enabled'] === false, 'The settings form did not preserve automatic protection preference.');
+};
+
 $tests['unreadable settings disable AI and require an administrator to save again'] = static function (): void {
     $path = storage_path('app/private/wingman-ai/settings.enc');
     File::$files = [$path => 'corrupted-encrypted-settings'];

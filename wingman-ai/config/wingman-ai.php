@@ -2,6 +2,9 @@
 
 return [
     'enabled' => true,
+    'automatic_enabled' => true,
+    'auto_daily_limit' => 20,
+    'auto_cooldown_seconds' => 300,
     'ai_enabled' => false,
     'base_url' => '',
     'model' => '',

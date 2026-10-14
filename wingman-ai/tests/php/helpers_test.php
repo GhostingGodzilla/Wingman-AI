@@ -95,6 +95,10 @@ $report = $diagnose('old: Unable to access jarfile old.jar', ['outcome' => 'runn
 $check(str_contains($report['summary'], 'currently running') && !str_contains($report['summary'], 'cannot be loaded'), 'Current running outcome must override historical fatal signatures.');
 $report = $diagnose('old: Unable to access jarfile old.jar', ['outcome' => 'observed', 'observed_state' => 'offline', 'observations' => ['capture_mode' => 'existing']]);
 $check(str_contains($report['likely_cause'], 'historical') && str_contains($report['evidence'][0], 'historical'), 'Existing logs must be explicitly labeled historical.');
+$report = $diagnose('old: Unable to access jarfile old.jar', ['observations' => ['capture_mode' => 'automatic', 'logs_may_include_previous_run' => true]]);
+$check(str_contains($report['summary'], 'failure was observed') && str_contains($report['likely_cause'], 'previous run') && str_contains($report['evidence'][0], 'historical'), 'An automatically observed failure may be confirmed while a retained older log cause remains uncertain.');
+$report = $diagnose('old: Unable to access jarfile old.jar', ['outcome' => 'timeout', 'observed_state' => 'starting', 'observations' => ['capture_mode' => 'automatic', 'logs_may_include_previous_run' => true]]);
+$check($report['confidence'] === 'low' && str_contains($report['summary'], 'unconfirmed') && str_contains($report['evidence'][0], 'historical'), 'Automatic timeout with retained old logs must keep both outcome and cause uncertain.');
 $report = $diagnose('old: Unable to access jarfile old.jar', ['outcome' => 'connection_error', 'observed_state' => 'running']);
 $check($report['confidence'] === 'low' && str_contains($report['likely_cause'], 'does not establish an application crash'), 'A failed console connection must not become a game crash diagnosis.');
 $report = $diagnose('Unable to access jarfile server.jar', ['outcome' => 'timeout', 'observed_state' => 'starting']);

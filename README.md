@@ -1,17 +1,19 @@
 # Wingman AI
 
-A Pelican console assistant that watches server startup, explains likely causes of failure, and suggests practical fixes. It uses the selected server's egg, runtime information, and console output to work across different games and applications.
+A Pelican assistant that automatically watches server startups, explains likely causes of failure, and suggests practical fixes. It uses the selected server's egg, runtime information, and console output to work across different games and applications.
 
 ## Install
 
-This first build targets **Pelican Panel 1.0.0-rc.1**. Check your installed version before importing it; earlier panel releases need an adapted build.
+This build targets **Pelican Panel 1.0.0-rc.1**. Check your installed version before importing it; earlier panel releases need an adapted build.
 
 1. Download [`wingman-ai.zip`](dist/wingman-ai.zip).
 2. Open the Pelican admin area and go to **Plugins → Import**.
 3. Upload the ZIP, install it, and enable the plugin if necessary.
-4. Open a server's **Console** and choose **Start & Diagnose** in **Wingman AI**.
+4. Start a server normally. Wingman AI automatically watches the startup and shows a report in its **Console** if startup fails or times out.
 
-Basic error checks work without an AI service. For a deeper explanation, configure a trusted hosted or local model in the plugin's settings. The plugin observes already active servers without restarting them and gives instructions for the user to review and apply.
+Automatic protection is enabled by default and uses Pelican's background queue worker. It covers normal console, API, and scheduled starts while the browser is closed. Successful starts stay quiet; AI analysis is requested only for automatic failure or timeout reports. Switch automatic protection off in plugin settings if preferred. The manual **Start & Diagnose** and **Analyze existing logs** buttons remain available.
+
+Basic error checks work without an AI service. For a deeper explanation, configure a trusted hosted or local model in the plugin's settings. The automatic watcher never starts, restarts, stops, or repairs a server. It gives instructions for the user to review and apply.
 
 Read the [full installation and configuration guide](wingman-ai/README.md) for supported connection settings, access controls, and data handling.
 

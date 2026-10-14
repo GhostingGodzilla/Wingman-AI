@@ -12,7 +12,8 @@ final class RuleDiagnostics
         $observations = is_array($capture['observations'] ?? null) ? $capture['observations'] : [];
         $status = strtolower((string) ($capture['observed_state'] ?? $capture['state'] ?? $capture['status'] ?? $context['status'] ?? ''));
         $outcome = strtolower((string) ($capture['outcome'] ?? ''));
-        $historical = ($observations['capture_mode'] ?? '') === 'existing';
+        $existingCapture = ($observations['capture_mode'] ?? '') === 'existing';
+        $historical = $existingCapture || self::isTrue($observations['logs_may_include_previous_run'] ?? false);
         $matches = [];
         foreach (self::rules() as $rule) {
             if (preg_match_all($rule['pattern'], $logs, $found, PREG_OFFSET_CAPTURE) > 0) {
@@ -51,7 +52,7 @@ final class RuleDiagnostics
             );
         }
 
-        if (!$historical && self::isTrue($observations['oom_killed'] ?? $capture['oom_killed'] ?? $capture['oomKilled'] ?? false)) {
+        if (!$existingCapture && self::isTrue($observations['oom_killed'] ?? $capture['oom_killed'] ?? $capture['oomKilled'] ?? false)) {
             return self::memoryKilledReport();
         }
 
@@ -79,25 +80,25 @@ final class RuleDiagnostics
                 $java = (int) $version[1] - 44;
                 array_unshift($steps, 'The reported class-file version requires Java ' . $java . ' or newer. Select a compatible Java Docker image for this server.');
             }
-            if ($historical) {
-                array_unshift($steps, 'Capture a fresh start attempt to confirm this existing-log error still occurs before changing files.');
-                return self::report(
-                    'Existing console logs contain a possible startup issue.',
-                    'This evidence may be historical and does not confirm a current failure. The matched error suggests: ' . $rule['cause'],
-                    'medium',
-                    ['Existing log (may be historical): ' . $latest['line']],
-                    $steps,
-                    ['A fresh startup capture to confirm the current failure.'],
-                );
-            }
             if ($outcome === 'timeout') {
                 return self::report(
                     'The startup check timed out; the final result is unconfirmed.',
-                    'The captured output suggests a possible problem: ' . $rule['cause'] . ' A timeout alone does not prove the server crashed.',
+                    ($historical ? 'Some captured output may be historical. ' : '') . 'The captured output suggests a possible problem: ' . $rule['cause'] . ' A timeout alone does not prove the server crashed.',
                     'low',
-                    [$latest['line'], 'Capture outcome: timeout'],
+                    [($historical ? 'Existing log (may be historical): ' : '') . $latest['line'], 'Capture outcome: timeout'],
                     array_merge(['Check the current server state and collect any console lines produced after the capture ended.'], $steps),
                     ['The current server state and output after the timed-out capture.'],
+                );
+            }
+            if ($historical) {
+                array_unshift($steps, 'Capture a fresh start attempt to confirm this existing-log error still occurs before changing files.');
+                return self::report(
+                    $outcome === 'failed' && !$existingCapture ? 'A startup failure was observed; its log cause needs confirmation.' : 'Existing console logs contain a possible startup issue.',
+                    ($outcome === 'failed' && !$existingCapture ? 'The failed state was observed, but this log evidence may belong to a previous run. ' : 'This evidence may be historical and does not confirm a current failure. ') . 'The matched error suggests a possible cause: ' . $rule['cause'],
+                    'medium',
+                    ['Existing log (may be historical): ' . $latest['line']],
+                    $steps,
+                    ['Fresh startup output to confirm which error belongs to the current attempt.'],
                 );
             }
             return self::report($rule['summary'], $rule['cause'], $rule['confidence'], [$latest['line']], $steps, $rule['needs'] ?? []);

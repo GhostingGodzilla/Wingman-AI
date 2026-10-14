@@ -39,6 +39,15 @@ class AiHelpAssistantPlugin implements Plugin, HasPluginSettings
     {
         return [
             Toggle::make('enabled')->label('Enable Wingman AI')->inline(false),
+            Section::make('Automatic startup protection')
+                ->description('Watch each startup in the background, including scheduled starts while the console is closed. A working Pelican queue worker is required.')
+                ->schema([
+                    Toggle::make('automatic_enabled')->label('Automatically diagnose startup failures')->inline(false)
+                        ->helperText('Successful starts stay quiet. Failed or timed-out starts produce a report; configured AI analysis may send redacted output to your provider.'),
+                    TextInput::make('auto_daily_limit')->label('Automatic reports per server per day')->numeric()->minValue(1)->maxValue(1000)->required(),
+                    TextInput::make('auto_cooldown_seconds')->label('Minimum seconds between automatic reports')->numeric()->minValue(60)->maxValue(3600)->required()
+                        ->helperText('Limits repeated reports during a crash loop.'),
+                ]),
             Section::make('AI connection')->description('Choose an AI service or a model running on your own machine. Basic error checks work without an AI connection.')
                 ->schema([
                     Toggle::make('ai_enabled')->label('Use AI analysis')->inline(false)->live(),

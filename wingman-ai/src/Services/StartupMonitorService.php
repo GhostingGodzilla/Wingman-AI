@@ -41,19 +41,31 @@ class StartupMonitorService
             $watch = max(30, min(600, (int) ($settings['watch_seconds'] ?? 180)));
             $id = (string) Str::uuid();
             $ttl = now()->addSeconds($watch + 120);
-            // This socket is read only; startup uses the authorized backend action.
-            $permissions = app(GetUserPermissionsService::class)->handle($server, $user);
-            $scopes = [SubuserPermission::WebsocketConnect->value];
-            if (in_array('admin.websocket.errors', $permissions, true)) {
-                $scopes[] = 'admin.websocket.errors';
+            $config = [
+                'run_id' => $id,
+                'mode' => $mode,
+                'watch_seconds' => $watch,
+                'max_log_bytes' => max(4096, min(64000, (int) ($settings['max_log_bytes'] ?? 48000))),
+            ];
+            // History needs no browser socket. Fresh captures attach a read-only
+            // socket before the authorized backend start action is sent.
+            if ($mode === 'startup') {
+                $permissions = app(GetUserPermissionsService::class)->handle($server, $user);
+                $scopes = [SubuserPermission::WebsocketConnect->value];
+                if (in_array('admin.websocket.errors', $permissions, true)) {
+                    $scopes[] = 'admin.websocket.errors';
+                }
+                $token = app(NodeJWTService::class)
+                    ->setExpiresAt(now()->addMinutes(12)->toImmutable())
+                    ->setScopes(NodeJwtScope::Websocket)
+                    ->setUser($user)
+                    ->setClaims(['server_uuid' => $server->uuid, 'permissions' => $scopes])
+                    ->handle($server->node, $user->id . $server->uuid)->toString();
+                $config += [
+                    'socket' => str_replace(['https://', 'http://'], ['wss://', 'ws://'], $server->node->getConnectionAddress()) . '/api/servers/' . $server->uuid . '/ws',
+                    'token' => $token,
+                ];
             }
-            $token = app(NodeJWTService::class)
-                ->setExpiresAt(now()->addMinutes(12)->toImmutable())
-                ->setScopes(NodeJwtScope::Websocket)
-                ->setUser($user)
-                ->setClaims(['server_uuid' => $server->uuid, 'permissions' => $scopes])
-                ->handle($server->node, $user->id . $server->uuid)->toString();
-
             Cache::put($this->runKey($id), [
                 'user' => $user->id,
                 'server' => $server->id,
@@ -64,18 +76,11 @@ class StartupMonitorService
             ], $ttl);
             Cache::put($this->activeKey($server, $user), $id, $ttl);
 
-            return [
-                'run_id' => $id,
-                'socket' => str_replace(['https://', 'http://'], ['wss://', 'ws://'], $server->node->getConnectionAddress()) . '/api/servers/' . $server->uuid . '/ws',
-                'token' => $token,
-                'mode' => $mode,
-                'watch_seconds' => $watch,
-                'max_log_bytes' => max(4096, min(64000, (int) ($settings['max_log_bytes'] ?? 48000))),
-            ];
+            return $config;
         });
     }
 
-    /** Called after Wings authenticates, so an immediate failure cannot outrun capture. */
+    /** Fresh starts wait for socket authentication; history is read through REST. */
     public function begin(Server $server, User $user, string $id): array
     {
         $this->authorize($server, $user);
@@ -85,6 +90,10 @@ class StartupMonitorService
             $this->assert($run['phase'] === 'prepared', 'This capture has already begun or expired.');
             $this->assert(time() - $run['prepared_at'] <= 30, 'The connection took too long. Please try again.');
             $this->assert((bool) (app(AssistantSettings::class)->get()['enabled'] ?? true), 'The assistant is disabled.');
+
+            if ($run['mode'] === 'existing') {
+                return $this->beginExisting($server, $user, $id, $run);
+            }
 
             return Cache::lock('wingman-ai:power:' . $server->id, 15)->block(3, function () use ($server, $user, $id, $run) {
                 $server->refresh();
@@ -115,6 +124,55 @@ class StartupMonitorService
                 return ['action' => $action, 'initial_state' => $state];
             });
         });
+    }
+
+    private function beginExisting(Server $server, User $user, string $id, array $run): array
+    {
+        $this->authorize($server, $user);
+        $server->refresh();
+        $server->validateCurrentState();
+        $this->assert(!$server->node->isUnderMaintenance(), 'This node is under maintenance. Wait until maintenance ends.');
+        $repository = app(DaemonServerRepository::class)->setServer($server);
+        $state = (string) ($repository->getDetails(5)['state'] ?? 'missing');
+        $rows = $repository->getHttpClient()->connectTimeout(5)->timeout(10)
+            ->get('/api/servers/' . $server->uuid . '/logs', ['size' => 100])->throw()->json('data');
+        $this->assert(is_array($rows), 'Wings did not return a recent console log. Try again or check the node connection.');
+        [$logs, $truncated] = $this->boundedHistory($rows);
+        $run['phase'] = 'capturing';
+        $run['action'] = 'existing';
+        $run['initial_state'] = $state;
+        $run['started_at'] = time();
+        $this->putRun($id, $run);
+
+        return ['action' => 'existing', 'initial_state' => $state, 'logs' => $logs, 'log_truncated' => $truncated];
+    }
+
+    /** Keep complete recent lines so truncation cannot separate a secret label. */
+    private function boundedHistory(array $rows): array
+    {
+        $lines = [];
+        $bytes = 0;
+        $truncated = false;
+        foreach ($rows as $row) {
+            if (!is_string($row)) {
+                continue;
+            }
+            foreach (preg_split('/\r\n|\r|\n/', $row) as $line) {
+                $size = strlen($line) + 1;
+                if ($size > 262144) {
+                    $truncated = true;
+                    continue;
+                }
+                $lines[] = $line;
+                $bytes += $size;
+                while ($bytes > 262144) {
+                    $bytes -= strlen(array_shift($lines)) + 1;
+                    $truncated = true;
+                }
+            }
+        }
+
+        return [implode("\n", $lines), $truncated];
     }
 
     public function complete(Server $server, User $user, string $id, array $capture): array

@@ -117,9 +117,26 @@ namespace App\Repositories\Daemon {
     {
         public string $state = 'offline';
         public array $powers = [];
+        public array $logRequests = [];
+        public array $history = ['Error: Unable to access jarfile server.jar'];
         public function setServer(\App\Models\Server $server): self { return $this; }
         public function getDetails(int $timeout): array { return ['state' => $this->state]; }
         public function power(string $action): TestResponse { $this->powers[] = $action; return new TestResponse(); }
+        public function getHttpClient(): object
+        {
+            return new class($this) {
+                public function __construct(private DaemonServerRepository $repository) {}
+                public function connectTimeout(int $seconds): self { return $this; }
+                public function timeout(int $seconds): self { return $this; }
+                public function get(string $path, array $query): self
+                {
+                    $this->repository->logRequests[] = [$path, $query];
+                    return $this;
+                }
+                public function throw(): self { return $this; }
+                public function json(string $key): mixed { return $key === 'data' ? $this->repository->history : null; }
+            };
+        }
     }
 }
 
@@ -331,8 +348,13 @@ namespace {
     runTest('existing logs require reading permission and never send power', function () {
         [$monitor, $server, $user] = resetHarness();
         $user->start = false;
-        $id = $monitor->prepare($server, $user, 'existing')['run_id'];
-        check($monitor->begin($server, $user, $id)['action'] === 'existing', 'Existing logs wrong action');
+        $config = $monitor->prepare($server, $user, 'existing');
+        $id = $config['run_id'];
+        check(!isset($config['socket']) && !isset($config['token']), 'History generated browser socket credentials');
+        $result = $monitor->begin($server, $user, $id);
+        check($result['action'] === 'existing' && $result['initial_state'] === 'offline', 'Offline existing logs wrong action');
+        check(str_contains($result['logs'], 'Unable to access jarfile'), 'REST history was lost');
+        check(app(DaemonServerRepository::class)->logRequests === [['/api/servers/server-uuid/logs', ['size' => 100]]], 'History endpoint did not target the current server');
         $user->read = false;
         rejects(fn () => $monitor->complete($server, $user, $id, []), 'Forbidden');
         check(app(DaemonServerRepository::class)->powers === [], 'Existing logs sent power');

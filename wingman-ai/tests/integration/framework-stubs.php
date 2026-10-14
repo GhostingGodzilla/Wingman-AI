@@ -24,6 +24,8 @@ namespace App\Enums {
     {
         case WebsocketConnect = 'websocket.connect';
         case StartupRead = 'startup.read';
+        case ControlStart = 'control.start';
+        case ControlRestart = 'control.restart';
     }
 }
 
@@ -34,6 +36,7 @@ namespace App\Models {
     class Server
     {
         public int $id = 1;
+        public string $uuid = 'server-uuid-1';
         public object $egg;
         public int $memory = 2048;
         public int $disk = 10000;

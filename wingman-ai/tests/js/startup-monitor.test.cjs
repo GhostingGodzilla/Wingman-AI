@@ -139,3 +139,59 @@ test('a socket closure during the backend start request produces a connection di
     assert.equal(captures[0].outcome, 'connection_error');
     controller.destroy();
 });
+
+test('existing history reads backend REST output while offline without opening a browser socket', async () => {
+    const calls = [];
+    const captures = [];
+    class Socket {
+        constructor() { throw new Error('History must not open a WebSocket.'); }
+    }
+    const wire = {
+        async prepareDiagnosis(mode) { calls.push(['prepare', mode]); return { run_id: 'history-run', mode: 'existing' }; },
+        async beginCapture(id) { calls.push(['begin', id]); return { action: 'existing', initial_state: 'offline', logs: 'Error: Unable to access jarfile server.jar', log_truncated: true }; },
+        async completeDiagnosis(id, capture) { calls.push(['complete', id]); captures.push(capture); return { complete: true }; },
+        async cancelDiagnosis() { calls.push(['cancel']); return {}; },
+    };
+    const controller = mount(fakeElement(), wire, { WebSocket: Socket, now: () => 100 });
+    await controller.start('existing');
+    assert.deepEqual(calls, [['prepare', 'existing'], ['begin', 'history-run'], ['complete', 'history-run']]);
+    assert.equal(captures.length, 1);
+    assert.equal(captures[0].outcome, 'observed');
+    assert.equal(captures[0].observed_state, 'offline');
+    assert.match(captures[0].logs, /Unable to access jarfile/);
+    assert.equal(captures[0].observations.log_truncated, true);
+    controller.destroy();
+});
+
+test('a rejected existing-history request releases its run and never submits a fabricated diagnosis', async () => {
+    const calls = [];
+    const wire = {
+        async prepareDiagnosis() { return { run_id: 'history-run', mode: 'existing' }; },
+        async beginCapture() { return { error: 'Recent history is unavailable.' }; },
+        async completeDiagnosis() { calls.push('complete'); return {}; },
+        async cancelDiagnosis(id) { calls.push(['cancel', id]); return {}; },
+    };
+    const element = fakeElement();
+    const controller = mount(element, wire, { WebSocket: class {}, now: () => 0 });
+    await controller.start('existing');
+    assert.deepEqual(calls, [['cancel', 'history-run']]);
+    assert.equal(element.querySelector('[data-ai-status]').textContent, 'Recent history is unavailable.');
+    controller.destroy();
+});
+
+test('existing REST history reaches backend redaction before the smaller provider log budget is applied', async () => {
+    const history = '-----BEGIN PRIVATE KEY-----\n' + 'a'.repeat(70000) + '\n-----END PRIVATE KEY-----\nRecent error';
+    const captures = [];
+    const wire = {
+        async prepareDiagnosis() { return { run_id: 'history-run', mode: 'existing', max_log_bytes: 48000 }; },
+        async beginCapture() { return { action: 'existing', initial_state: 'offline', logs: history, log_truncated: false }; },
+        async completeDiagnosis(id, capture) { captures.push(capture); return { complete: true }; },
+        async cancelDiagnosis() { return {}; },
+    };
+    const controller = mount(fakeElement(), wire, { WebSocket: class {}, now: () => 0 });
+    await controller.start('existing');
+    assert.equal(captures[0].logs, history);
+    assert.ok(Buffer.byteLength(captures[0].logs) > 48000);
+    assert.equal(captures[0].observations.log_truncated, false);
+    controller.destroy();
+});

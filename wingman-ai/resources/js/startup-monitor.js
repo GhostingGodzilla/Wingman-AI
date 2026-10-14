@@ -149,6 +149,7 @@
         function close(run) {
             clearTimeout(run.authTimer);
             clearInterval(run.tick);
+            if (!run.socket) return;
             run.socket.onclose = null;
             run.socket.onerror = null;
             run.socket.onmessage = null;
@@ -199,7 +200,7 @@
         async function start(mode = 'startup') {
             if (active || destroyed || startButton.disabled) return;
             const mine = ++generation;
-            display('Connecting to Wings before collecting server output…', true, 'Connecting');
+            display(mode === 'existing' ? 'Fetching recent console history through the panel…' : 'Connecting to Wings before collecting server output…', true, mode === 'existing' ? 'Reading logs' : 'Connecting');
             let config;
             try { config = await wire.prepareDiagnosis(mode); }
             catch (_) {
@@ -211,6 +212,23 @@
                 return;
             }
             if (config?.error) { display(config.error, false, 'Could not continue'); return; }
+            if (mode === 'existing') {
+                const run = { config, socket: null, capture: new Capture({ ...config, mode: 'existing' }, now()), finishing: false, beginning: true };
+                active = run;
+                let info;
+                try { info = await wire.beginCapture(config.run_id); }
+                catch (_) { await fail(run, 'The panel could not retrieve recent console history. Check the node connection and try again.'); return; }
+                if (active !== run || run.finishing || destroyed) return;
+                if (info?.error) { await fail(run, info.error); return; }
+                run.capture.begin(info, now());
+                // REST history is already bounded by the backend. Preserve it
+                // until backend redaction, including multiline secret headers.
+                run.capture.lines = typeof info.logs === 'string' ? info.logs : '';
+                run.capture.truncated = info.log_truncated === true;
+                run.beginning = false;
+                await finish(run, 'observed');
+                return;
+            }
             let socket;
             try { socket = new WS(config.socket); }
             catch (_) {
@@ -242,7 +260,7 @@
                     run.beginning = true;
                     clearTimeout(run.authTimer);
                     // Capture is already attached. Never request backlog for a fresh start.
-                    display(mode === 'existing' ? 'Fetching the recent console log…' : 'Checking current state and starting the server if it is stopped…', true, 'Checking');
+                    display('Checking current state and starting the server if it is stopped…', true, 'Checking');
                     let info;
                     try { info = await wire.beginCapture(config.run_id); }
                     catch (_) { await fail(run, 'The panel could not confirm startup. Check the console before trying again.'); return; }
@@ -251,12 +269,7 @@
                     run.capture.begin(info, now());
                     run.beginning = false;
                     if (run.pendingDisconnect) { await finish(run, 'connection_error', run.pendingDisconnect); return; }
-                    if (mode === 'existing') {
-                        socket.send(JSON.stringify({ event: 'send logs', args: [null] }));
-                        display('Collecting recent console output. No power action is sent.', true, 'Reading logs');
-                    } else {
-                        display(info.action === 'watching' ? 'The server is already active. Watching live output without restarting it…' : 'Start requested. Watching live output and server state…', true, 'Watching');
-                    }
+                    display(info.action === 'watching' ? 'The server is already active. Watching live output without restarting it…' : 'Start requested. Watching live output and server state…', true, 'Watching');
                     run.tick = setInterval(() => {
                         const outcome = run.capture.outcome(now());
                         if (outcome) finish(run, outcome);
