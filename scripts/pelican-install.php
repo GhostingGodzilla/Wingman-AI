@@ -85,6 +85,28 @@ function bootstrapPanel(string $panel): object
     return $app;
 }
 
+/**
+ * Pelican's installPlugin() runs `composer require` for every enabled plugin's
+ * packages, even though Wingman AI has none. Composer defaults to dev mode, which
+ * rebuilds a --no-dev panel with dev packages and an autoloader that requires the
+ * panel's absent tests/ folder, so every page returns HTTP 500. Keep Composer in
+ * the mode the panel was installed with; the registration child inherits this.
+ */
+function matchComposerInstallMode(string $panel): void
+{
+    if (getenv('COMPOSER_NO_DEV') !== false) {
+        return;
+    }
+    $installed = $panel . '/vendor/composer/installed.json';
+    if (!is_file($installed)) {
+        return;
+    }
+    $data = json_decode((string) file_get_contents($installed), true, 512, JSON_THROW_ON_ERROR);
+    if (is_array($data) && ($data['dev'] ?? null) === false && !putenv('COMPOSER_NO_DEV=1')) {
+        throw new RuntimeException('Could not keep Composer in the panel\'s no-dev mode.');
+    }
+}
+
 function preflight(string $panel, string $requiredVersion): void
 {
     checkRuntime();
@@ -383,6 +405,7 @@ function main(array $arguments): int
             case 'install':
                 $release = readJson($arguments[4] ?? '');
                 preflight($panel, (string) ($release['panel_version'] ?? ''));
+                matchComposerInstallMode($panel);
                 $result = installPackage($panel, $arguments[3] ?? '', $release, ($arguments[5] ?? '') === '1', function (string $panel, bool $enable, string $expectedStatus, string $version): void {
                     runChild(['register', $panel, $enable ? '1' : '0']);
                     runChild(['verify', $panel, $expectedStatus, $version]);

@@ -13,7 +13,7 @@ Passed checks:
 - 12 automatic UI scenarios covering console start/restart observation, cache-only polling, report permissions, locked state, status filtering, prior results, and manual report preservation.
 - 13 JavaScript behavior scenarios covering authentication order, immediate crashes, startup timeouts, running observation, offline history without a socket, redaction budgets, log bounds, and socket loss during a start request.
 - 9 offline installer shell scenarios covering immutable downloads, service-account selection, paths with spaces, version selection, checksum failures, and failed preflight. Linux identity, network, and Pelican execution were substituted for these local checks.
-- 14 independent installer scenarios covering archive paths and types, checksums, preserved metadata, same-version behavior, rollback, overlapping installation, and archive expansion limits. Four real symlink fixtures skip on this Windows environment and are included in the Ubuntu workflow.
+- 15 independent installer scenarios covering archive paths and types, checksums, preserved metadata, same-version behavior, rollback, overlapping installation, archive expansion limits, and keeping Composer in the panel's install mode for the registration step. Four real symlink fixtures skip on this Windows environment and are included in the Ubuntu workflow.
 - 56 release-summary assertions covering dated notes, tag/version matching, and edited summaries for new user-facing changes.
 - 24 packaging assertions covering ZIP contents, changelog inclusion, matching checksums, Pelican update feeds, and versioned release downloads.
 - PHP syntax validation for every PHP file.
@@ -24,3 +24,5 @@ Tests ran locally using PHP 8.2.12 and Node.js. Plugin syntax stays compatible w
 Installer shell checks ran under Git Bash. GitHub Actions is configured to repeat the checks on Ubuntu with PHP 8.4 and run filesystem symlink cases there. A real Linux/Pelican installation is still outside these isolated tests.
 
 A live Pelican installation, real server startup, and an actual external or local AI model request have **not** been tested in this workspace. No home-server connection or API key was available. The package should receive the disposable-server smoke checks described in `README.md` before production use.
+
+Version 0.3.1 (October 14, 2026): the Composer install-mode fix was tested on Ubuntu with PHP 8.5. The installer and release checks were rerun, and detection was checked against a live Pelican `1.0.0-rc.1` panel's `vendor/composer/installed.json`, which correctly selected `COMPOSER_NO_DEV=1`. That panel had previously gone down (HTTP 500) when the 0.3.0 installer registered the plugin, because Pelican ran `composer require` for Player Counter's packages in dev mode.

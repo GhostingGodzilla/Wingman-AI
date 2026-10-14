@@ -9,6 +9,7 @@ use Throwable;
 use ZipArchive;
 
 use function Wingman\Installer\installPackage;
+use function Wingman\Installer\matchComposerInstallMode;
 
 require dirname(__DIR__, 2) . '/scripts/pelican-install.php';
 
@@ -335,6 +336,37 @@ $tests['a small ZIP with oversized expanded contents is rejected before registra
     });
     expect(str_contains($error->getMessage(), 'expanded') && $called === 0, 'Oversized expanded archive was not rejected at validation.');
     expect(!file_exists($panel . '/plugins/wingman-ai'), 'Oversized expanded archive reached the plugin destination.');
+};
+
+$tests['registration keeps Composer in the panel install mode'] = static function (): void {
+    [, $panel] = fixture();
+    mkdir($panel . '/vendor/composer', 0755, true);
+    $childValue = static function (): string {
+        $process = proc_open([PHP_BINARY, '-r', 'echo var_export(getenv("COMPOSER_NO_DEV"), true);'], [1 => ['pipe', 'w']], $pipes);
+        $output = stream_get_contents($pipes[1]);
+        fclose($pipes[1]);
+        proc_close($process);
+
+        return (string) $output;
+    };
+    try {
+        putenv('COMPOSER_NO_DEV');
+        file_put_contents($panel . '/vendor/composer/installed.json', '{"packages":[],"dev":false}');
+        matchComposerInstallMode($panel);
+        expect($childValue() === "'1'", 'A --no-dev panel did not pass COMPOSER_NO_DEV to registration.');
+
+        putenv('COMPOSER_NO_DEV');
+        file_put_contents($panel . '/vendor/composer/installed.json', '{"packages":[],"dev":true}');
+        matchComposerInstallMode($panel);
+        expect($childValue() === 'false', 'A development panel was switched to --no-dev.');
+
+        putenv('COMPOSER_NO_DEV=0');
+        file_put_contents($panel . '/vendor/composer/installed.json', '{"packages":[],"dev":false}');
+        matchComposerInstallMode($panel);
+        expect($childValue() === "'0'", 'An explicit COMPOSER_NO_DEV choice was overridden.');
+    } finally {
+        putenv('COMPOSER_NO_DEV');
+    }
 };
 
 $failed = 0;

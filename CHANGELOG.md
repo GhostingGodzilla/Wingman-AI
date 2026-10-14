@@ -6,6 +6,15 @@ This is the update log for Wingman AI. Each release explains what changed and an
 
 <!-- Add new user-facing changes here before the next release. -->
 
+## [0.3.1] - 2026-10-14
+
+### Installer no longer breaks the panel
+
+- Fixed the Linux install/update command taking the whole panel down with an HTTP 500 error when another installed plugin (for example Player Counter) uses Composer packages. Pelican reinstalls every plugin's packages during registration; the installer now keeps Composer in the same no-dev mode the panel was installed with, so developer-only packages are no longer added.
+- If a previous install attempt already caused the 500 error, repair the panel first by running `composer install --no-dev --optimize-autoloader` as the panel account in the Pelican folder, then rerun the install command.
+
+Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/8.5**.
+
 ## [0.3.0] - 2026-10-14
 
 ### Easier installation and updates
@@ -37,7 +46,7 @@ Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/
 - Added basic error checks and optional hosted or local AI explanations with evidence and suggested fix steps.
 - Added server permissions, credential redaction, and encrypted AI connection settings.
 
-[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.3.1...HEAD
 [0.3.0]: https://github.com/GhostingGodzilla/Wingman-AI/releases/tag/v0.3.0
 [0.2.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/7c9182ffed703a36d182ab188ac2c58d494aa73e
 [0.1.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/8d759582f80dfd0029a5458f93898c25cb860122
