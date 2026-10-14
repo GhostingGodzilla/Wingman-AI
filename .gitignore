@@ -1,5 +1,7 @@
 /dist/*
 !/dist/wingman-ai.zip
+!/dist/wingman-ai.zip.sha256
+!/dist/release.json
 /.reference/
 *.log
 .env

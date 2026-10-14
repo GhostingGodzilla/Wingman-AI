@@ -1,0 +1,64 @@
+name: Checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Plugin, installer, and update summaries
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.4'
+          extensions: zip, mbstring, curl
+          coverage: none
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Check PHP syntax
+        run: find wingman-ai scripts tools tests -type f -name '*.php' -print0 | xargs -0 -n1 php -l
+      - name: Require a dated update summary
+        env:
+          CHANGE_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ -n "$CHANGE_BASE" && ! "$CHANGE_BASE" =~ ^0+$ ]]; then
+            php tools/release-notes.php --check --base "$CHANGE_BASE"
+          else
+            php tools/release-notes.php --check
+          fi
+      - name: Test release summary extraction and validation
+        run: php tests/release/release-notes.test.php
+      - name: Test plugin diagnostics, access controls, and monitoring
+        run: |
+          php wingman-ai/tests/php/helpers_test.php
+          php wingman-ai/tests/php/automatic_state_test.php
+          php wingman-ai/tests/integration/run.php
+          php wingman-ai/tests/monitor.test.php
+          php wingman-ai/tests/manual_history.test.php
+          php wingman-ai/tests/automatic.test.php
+          php wingman-ai/tests/ui_automatic.test.php
+          node --test wingman-ai/tests/js/startup-monitor.test.cjs
+      - name: Check installer shell syntax
+        run: |
+          bash -n install.sh
+          bash -n tests/installer/run.sh
+      - name: Test Linux installer download and preflight checks
+        run: bash tests/installer/run.sh
+      - name: Test plugin installation, archive validation, and rollback
+        run: php tests/installer-review/run.php
+      - name: Test release checksums and package manifests
+        run: php tests/packaging.test.php
+      - name: Build and verify the distributable
+        run: php wingman-ai/tools/package.php

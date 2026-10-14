@@ -1,0 +1,48 @@
+name: Publish release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    uses: ./.github/workflows/checks.yml
+
+  publish:
+    name: Publish downloads and update summary
+    needs: checks
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # 2.40.0
+        with:
+          php-version: '8.4'
+          extensions: zip
+          coverage: none
+      - name: Validate tag and build immutable release downloads
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          php tools/release-notes.php --check --tag "$RELEASE_TAG"
+          php wingman-ai/tools/package.php --release-tag "$RELEASE_TAG"
+          php tools/release-notes.php --tag "$RELEASE_TAG" --output dist/release-notes.md
+      - name: Publish release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          name: Wingman AI ${{ github.ref_name }}
+          body_path: dist/release-notes.md
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+          files: |
+            dist/wingman-ai.zip
+            dist/wingman-ai.zip.sha256
+            dist/release.json
+            install.sh
+            scripts/pelican-install.php

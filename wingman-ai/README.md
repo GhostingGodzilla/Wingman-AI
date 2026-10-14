@@ -26,6 +26,16 @@ The report contains a likely cause, confidence, evidence, and numbered fix steps
 
 You need administrator access to the Pelican **panel**, not only access to a game server's files.
 
+For Linux, run the automatic installer on the machine hosting the panel:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/GhostingGodzilla/Wingman-AI/main/install.sh | sudo bash -s -- --panel /var/www/pelican
+```
+
+Use your actual panel path. The command checks compatibility and downloads the plugin from one verified GitHub revision. It runs Pelican registration as the panel's service account and keeps a backup for rollback. Rerun it to update; private AI settings and disabled/enabled state are preserved. A custom setup can use `--user ACCOUNT`; `--check` shows versions without installing, and `--version v0.3.0` selects a published version. Use `--force` only for an intentional reinstall or downgrade.
+
+For installation through the browser:
+
 1. Confirm your panel is **1.0.0-rc.1** before installing this build.
 2. In Pelican's admin area, open **Plugins** and use **Import** to upload `wingman-ai.zip`.
 3. Choose **Install**, wait for the panel's queue worker to finish, and enable the plugin if necessary.
@@ -33,6 +43,12 @@ You need administrator access to the Pelican **panel**, not only access to a gam
 5. Open a server's **Console**. The assistant appears above the console, with automatic status and the latest permitted report.
 
 For manual installation, copy this folder to `/var/www/pelican/plugins/wingman-ai` (adjust for your panel directory), then run `php artisan p:plugin:install` from the panel directory and select the plugin.
+
+## Updates
+
+Run the Linux installer command again, or use Pelican's **Plugins → Update** button when a compatible newer version is available. The [GitHub update log](https://github.com/GhostingGodzilla/Wingman-AI/blob/main/CHANGELOG.md) explains each update. [GitHub Releases](https://github.com/GhostingGodzilla/Wingman-AI/releases) provides dated summaries and versioned downloads.
+
+The latest update log is also included as `CHANGELOG.md` in the plugin ZIP. Existing AI settings remain outside the plugin folder, so replacing the plugin does not erase them.
 
 ## Connect an AI model
 
@@ -76,6 +92,16 @@ node --test tests/js/startup-monitor.test.cjs
 ```
 
 The test suites use separate PHP processes because their framework substitutes differ. These checks do not replace a live panel smoke test. See `VALIDATION.md` for the checks performed on this build.
+
+From the repository root, release and installer checks are:
+
+```sh
+php tools/release-notes.php --check
+php tests/release/release-notes.test.php
+php tests/packaging.test.php
+php tests/installer-review/run.php
+bash tests/installer/run.sh
+```
 
 To package the plugin, run `php tools/package.php` from this directory. The ZIP is written to the workspace's `dist/` directory and includes source, views, defaults, documentation, and license; no saved connection settings are included.
 
