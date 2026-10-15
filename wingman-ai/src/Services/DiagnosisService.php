@@ -88,6 +88,10 @@ class DiagnosisService
             }
             $report['source'] = 'ai';
             $report['notice'] = 'This explanation is based on the captured console output and permitted startup settings. Review suggested changes before applying them.';
+            // One-click repairs come only from the deterministic checks, never from the model.
+            if (isset($fallback['fix'])) {
+                $report['fix'] = $fallback['fix'];
+            }
 
             return $report;
         } catch (Throwable) {

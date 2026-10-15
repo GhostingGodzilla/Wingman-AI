@@ -2,7 +2,7 @@
     "id": "wingman-ai",
     "name": "Wingman AI",
     "author": "GhostingGodzilla",
-    "version": "0.3.1",
+    "version": "0.4.0",
     "description": "Automatically watch server startups, explain failures, and suggest fixes from console output.",
     "category": "plugin",
     "update_url": "https://raw.githubusercontent.com/GhostingGodzilla/Wingman-AI/main/update.json",

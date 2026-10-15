@@ -76,32 +76,33 @@ final class RuleDiagnostics
         if ($latest !== null) {
             $rule = $latest['rule'];
             $steps = $rule['steps'];
-            if ($rule['id'] === 'java' && preg_match('/class (?:file )?version\s+(\d+)(?:\.\d+)?/i', $latest['line'], $version) && (int) $version[1] >= 49) {
-                $java = (int) $version[1] - 44;
-                array_unshift($steps, 'The reported class-file version requires Java ' . $java . ' or newer. Select a compatible Java Docker image for this server.');
+            $java = $rule['id'] === 'java' ? self::requiredJava($latest['line']) : null;
+            if ($java !== null) {
+                array_unshift($steps, 'The reported error requires Java ' . $java . ' or newer. Select a compatible Java Docker image for this server.');
             }
+            $fix = self::fixFor($rule['id'], $latest['line'], $java);
             if ($outcome === 'timeout') {
-                return self::report(
+                return self::withFix(self::report(
                     'The startup check timed out; the final result is unconfirmed.',
                     ($historical ? 'Some captured output may be historical. ' : '') . 'The captured output suggests a possible problem: ' . $rule['cause'] . ' A timeout alone does not prove the server crashed.',
                     'low',
                     [($historical ? 'Existing log (may be historical): ' : '') . $latest['line'], 'Capture outcome: timeout'],
                     array_merge(['Check the current server state and collect any console lines produced after the capture ended.'], $steps),
                     ['The current server state and output after the timed-out capture.'],
-                );
+                ), $fix);
             }
             if ($historical) {
                 array_unshift($steps, 'Capture a fresh start attempt to confirm this existing-log error still occurs before changing files.');
-                return self::report(
+                return self::withFix(self::report(
                     $outcome === 'failed' && !$existingCapture ? 'A startup failure was observed; its log cause needs confirmation.' : 'Existing console logs contain a possible startup issue.',
                     ($outcome === 'failed' && !$existingCapture ? 'The failed state was observed, but this log evidence may belong to a previous run. ' : 'This evidence may be historical and does not confirm a current failure. ') . 'The matched error suggests a possible cause: ' . $rule['cause'],
                     'medium',
                     ['Existing log (may be historical): ' . $latest['line']],
                     $steps,
                     ['Fresh startup output to confirm which error belongs to the current attempt.'],
-                );
+                ), $fix);
             }
-            return self::report($rule['summary'], $rule['cause'], $rule['confidence'], [$latest['line']], $steps, $rule['needs'] ?? []);
+            return self::withFix(self::report($rule['summary'], $rule['cause'], $rule['confidence'], [$latest['line']], $steps, $rule['needs'] ?? []), $fix);
         }
 
         if ($outcome === 'timeout') {
@@ -199,6 +200,43 @@ final class RuleDiagnostics
         ];
     }
 
+    /**
+     * Only a few diagnoses map to a repair Pelican can apply safely, and only from
+     * deterministic rule matches. AI output never selects or changes a repair.
+     */
+    private static function fixFor(string $rule, string $line, ?int $java): ?array
+    {
+        if ($rule === 'java') {
+            return $java !== null ? ['type' => 'java_image', 'java' => $java] : ['type' => 'java_image'];
+        }
+        if ($rule === 'missing_files' || ($rule === 'jar' && preg_match('/unable to access jarfile|[^\s]+\.jar[^\r\n]{0,100}(?:no such file|not found)/i', $line))) {
+            return ['type' => 'reinstall'];
+        }
+
+        return $rule === 'eula' ? ['type' => 'eula'] : null;
+    }
+
+    private static function requiredJava(string $line): ?int
+    {
+        if (preg_match('/class (?:file )?version\s+(\d+)(?:\.\d+)?/i', $line, $version) && (int) $version[1] >= 49) {
+            return (int) $version[1] - 44;
+        }
+        if (preg_match('/requires running the server with Java (\d+) or above/i', $line, $version)) {
+            return (int) $version[1];
+        }
+
+        return null;
+    }
+
+    private static function withFix(array $report, ?array $fix): array
+    {
+        if ($fix !== null) {
+            $report['fix'] = $fix;
+        }
+
+        return $report;
+    }
+
     private static function rules(): array
     {
         return [
@@ -211,7 +249,7 @@ final class RuleDiagnostics
             ],
             [
                 'id' => 'java', 'confidence' => 'high',
-                'pattern' => '/UnsupportedClassVersionError|compiled by a more recent version of (?:the )?Java Runtime|class file version [\d.]+[^\r\n]*recognizes class file versions/i',
+                'pattern' => '/UnsupportedClassVersionError|compiled by a more recent version of (?:the )?Java Runtime|class file version [\d.]+[^\r\n]*recognizes class file versions|requires running the server with Java \d+ or above/i',
                 'summary' => 'The Java runtime is older than the application requires.',
                 'cause' => 'The application or a dependency was compiled for a newer Java version than the container is running.',
                 'steps' => ['Compare the application and mod/plugin Java requirements with the Java version provided by the selected Docker image.', 'Select a compatible Java image in Pelican and retry. Changing a Java version on the host alone does not change the container runtime.', 'Ensure mods or plugins also support the chosen application and Java versions.'],
@@ -271,6 +309,13 @@ final class RuleDiagnostics
                 'summary' => 'The executable is missing a required runtime library.',
                 'cause' => 'The selected container image does not provide a required shared library, or the application binary is incompatible with its runtime environment.',
                 'steps' => ['Identify the exact library and application binary named by the error.', 'Check that the egg selects the application’s supported Docker image and CPU architecture.', 'Ask the administrator or egg maintainer to supply the dependency in the container image. Installing a library only on the host does not supply it inside the container.'],
+            ],
+            [
+                'id' => 'missing_files', 'confidence' => 'high',
+                'pattern' => '/wine: (?:failed to open|cannot find) [^\r\n]{0,200}\.exe/i',
+                'summary' => 'The game or application files are missing.',
+                'cause' => 'The startup command points to a program file that is not in the server folder. The installation may not have finished, or the files were removed or renamed.',
+                'steps' => ['Check the server Files page for the program named in the error, including its exact spelling and folder.', 'If it is missing, reinstall the server so its install script downloads the files again. Back up worlds and configuration first; a reinstall can overwrite files.', 'If the file exists under a different name or folder, correct the startup command or variables to match.'],
             ],
             [
                 'id' => 'executable', 'confidence' => 'high',

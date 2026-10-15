@@ -78,6 +78,15 @@
                     </div>
                 @endif
 
+                @php($fixOffer = $this->fixOffer())
+                @if ($fixOffer)
+                    <div class="rounded-lg border border-primary-300 bg-primary-50 p-3 dark:border-primary-700 dark:bg-primary-950/40">
+                        <p class="text-sm font-semibold text-gray-950 dark:text-white">Wingman can fix this</p>
+                        <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">{{ $this->fixSummary($fixOffer) }} You will be asked to confirm first.</p>
+                        <div class="mt-3">{{ $this->applyFixAction }}</div>
+                    </div>
+                @endif
+
                 @if (!empty($displayReport['evidence']))
                     <details class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
                         <summary class="cursor-pointer text-sm font-medium text-gray-950 dark:text-white">Evidence from this capture</summary>
@@ -102,6 +111,8 @@
             </div>
         @endif
     </x-filament::section>
+
+    <x-filament-actions::modals />
 
     @script
         <script>

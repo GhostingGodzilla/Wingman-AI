@@ -8,6 +8,11 @@ namespace Filament\Widgets {
     class Widget {}
 }
 
+namespace Filament\Actions\Contracts { interface HasActions {} }
+namespace Filament\Actions\Concerns { trait InteractsWithActions {} }
+namespace Filament\Schemas\Contracts { interface HasSchemas {} }
+namespace Filament\Schemas\Concerns { trait InteractsWithSchemas {} }
+
 namespace Filament\Facades {
     class Filament
     {
@@ -68,6 +73,28 @@ namespace Pelican\AiHelpAssistant\Services {
         }
     }
 
+    class RepairService
+    {
+        public array $calls = [];
+        public ?array $offer = null;
+        public ?\Throwable $failure = null;
+
+        public function offer(\App\Models\Server $server, \App\Models\User $user, ?array $report): ?array
+        {
+            $this->calls[] = ['offer', $server->id, $report];
+            if ($this->failure !== null) { throw $this->failure; }
+
+            return $this->offer;
+        }
+
+        public function apply(\App\Models\Server $server, \App\Models\User $user, ?array $report, ?string $image = null): string
+        {
+            $this->calls[] = ['apply', $server->id];
+
+            return 'applied';
+        }
+    }
+
     class StartupMonitorService
     {
         public array $calls = [];
@@ -98,6 +125,7 @@ namespace {
     use Pelican\AiHelpAssistant\Filament\Server\Widgets\AiHelpAssistant;
     use Pelican\AiHelpAssistant\Services\AssistantSettings;
     use Pelican\AiHelpAssistant\Services\AutomaticStartupService;
+    use Pelican\AiHelpAssistant\Services\RepairService;
     use Pelican\AiHelpAssistant\Services\StartupMonitorService;
 
     function app(string $class): object
@@ -124,7 +152,7 @@ namespace {
         $GLOBALS['ui_user'] = new User($startupRead ? ['websocket.connect', 'startup.read'] : ['websocket.connect']);
         $automatic = new AutomaticStartupService();
         $manual = new StartupMonitorService();
-        $GLOBALS['ui_services'] = [AutomaticStartupService::class => $automatic, StartupMonitorService::class => $manual, AssistantSettings::class => new AssistantSettings()];
+        $GLOBALS['ui_services'] = [AutomaticStartupService::class => $automatic, StartupMonitorService::class => $manual, AssistantSettings::class => new AssistantSettings(), RepairService::class => new RepairService()];
 
         return [new AiHelpAssistant(), $automatic, $manual, $server];
     }
@@ -132,6 +160,11 @@ namespace {
     function uiText(AiHelpAssistant $widget): string
     {
         return (new ReflectionMethod($widget, 'automaticStatusText'))->invoke($widget);
+    }
+
+    function uiFixOffer(AiHelpAssistant $widget): ?array
+    {
+        return (new ReflectionMethod($widget, 'fixOffer'))->invoke($widget);
     }
 
     $tests = [];
@@ -268,6 +301,39 @@ namespace {
         $before = count($automatic->calls);
         $widget->observeNormalPower($server->uuid, 'start');
         uiExpect(count($automatic->calls) === $before, 'An unauthenticated event invoked automatic observation.');
+    };
+
+    $tests['fix box asks the repair service about the displayed report and polling never repairs'] = static function (): void {
+        [$widget, $automatic, , $server] = uiFixture();
+        $repairs = $GLOBALS['ui_services'][RepairService::class];
+        uiExpect(uiFixOffer($widget) === null && $repairs->calls === [], 'No report must mean no fix offer and no repair lookup.');
+        $report = ['summary' => 'The game or application files are missing.', 'generated_at' => '2026-10-14T23:00:00+00:00', 'fix' => ['type' => 'reinstall']];
+        $automatic->reports[1] = $report;
+        $widget->refreshAutomaticDiagnosis();
+        $repairs->offer = ['type' => 'reinstall'];
+        uiExpect(uiFixOffer($widget) === ['type' => 'reinstall'], 'A permitted repair was not offered.');
+        uiExpect($repairs->calls[0] === ['offer', $server->id, $report], 'The offer must be checked against the displayed automatic report.');
+        $repairs->offer = null;
+        uiExpect(uiFixOffer($widget) === null, 'A repair the service refuses must not be shown.');
+        $repairs->failure = new RuntimeException('secret-repair-error');
+        uiExpect(uiFixOffer($widget) === null, 'A repair lookup failure must hide the fix box.');
+        for ($i = 0; $i < 3; $i++) { $widget->refreshAutomaticDiagnosis(); }
+        uiExpect(!in_array('apply', array_column($repairs->calls, 0), true), 'Polling applied a repair.');
+    };
+
+    $tests['an applied fix is hidden for that report but not for a new one'] = static function (): void {
+        [$widget, $automatic] = uiFixture();
+        $repairs = $GLOBALS['ui_services'][RepairService::class];
+        $repairs->offer = ['type' => 'eula'];
+        $automatic->reports[1] = ['summary' => 'EULA', 'generated_at' => '2026-10-14T23:00:00+00:00', 'fix' => ['type' => 'eula']];
+        $widget->refreshAutomaticDiagnosis();
+        $fingerprint = (new ReflectionMethod($widget, 'fixFingerprint'))->invoke($widget, $automatic->reports[1]);
+        (new ReflectionProperty($widget, 'appliedFix'))->setValue($widget, $fingerprint);
+        uiExpect(uiFixOffer($widget) === null, 'The fix button reappeared for a report that was already repaired.');
+        $automatic->reports[1]['generated_at'] = '2026-10-14T23:10:00+00:00';
+        $widget->refreshAutomaticDiagnosis();
+        uiExpect(uiFixOffer($widget) === ['type' => 'eula'], 'A newer report must offer its fix again.');
+        uiExpect((new ReflectionProperty($widget, 'appliedFix'))->getAttributes(Locked::class) !== [], 'Applied fix state must be locked against browser edits.');
     };
 
     $failed = 0;

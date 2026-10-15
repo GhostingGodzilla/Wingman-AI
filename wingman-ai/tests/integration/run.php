@@ -334,6 +334,22 @@ $tests['AI transport rejects HTTP failures missing content and excessive respons
     }
 };
 
+
+$tests['AI reports keep only the deterministic repair offer'] = static function (): void {
+    $answer = static fn (array $fix): string => json_encode([
+        'summary' => 'A model explanation.', 'likely_cause' => 'A model cause.', 'confidence' => 'high',
+        'evidence' => [], 'steps' => ['A model step.'], 'needs_more_information' => [], 'fix' => $fix,
+    ], JSON_THROW_ON_ERROR);
+    [$service, $server, $user, $client] = fixture();
+    $client->answer = $answer(['type' => 'eula']);
+    $report = $service->diagnose($server, $user, capture());
+    expect($report['source'] === 'ai' && ($report['fix'] ?? null) === ['type' => 'reinstall'], 'An AI report must carry the rule-based repair, not the model-supplied one.');
+    [$service, $server, $user, $client] = fixture();
+    $client->answer = $answer(['type' => 'reinstall']);
+    $report = $service->diagnose($server, $user, capture(['logs' => 'Error: listen EADDRINUSE: address already in use 0.0.0.0:25565']));
+    expect($report['source'] === 'ai' && !array_key_exists('fix', $report), 'A model must not be able to add a repair offer.');
+};
+
 $failures = 0;
 foreach ($tests as $name => $test) {
     try {

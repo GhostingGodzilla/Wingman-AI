@@ -80,6 +80,30 @@ foreach ($cases as [$logs, $expected]) {
     $check(str_contains(strtolower($report['summary']), strtolower($expected)), 'Expected diagnosis category: ' . $expected . '; got ' . $report['summary']);
     $check($report['source'] === 'rules' && $report['evidence'] !== [] && $report['steps'] !== [], 'A known rule must include provenance, evidence, and next steps.');
 }
+
+// One-click repairs come only from these deterministic matches, never from AI output.
+$fixes = [
+    ['wine: failed to open "./Risk of Rain 2.exe"', ['type' => 'reinstall'], 'files are missing'],
+    ['Error: Unable to access jarfile paper.jar', ['type' => 'reinstall'], 'Java application'],
+    ['Error: Could not find or load main class net.minecraft.Main', null, 'Java application'],
+    ['java.lang.UnsupportedClassVersionError: Main has been compiled by a more recent version of the Java Runtime (class file version 65.0), this version recognizes up to 61.0', ['type' => 'java_image', 'java' => 21], 'Java runtime'],
+    ['Minecraft 1.18 requires running the server with Java 17 or above', ['type' => 'java_image', 'java' => 17], 'Java runtime'],
+    ['You need to agree to the EULA in order to run the server.', ['type' => 'eula'], 'EULA'],
+    ['Error: listen EADDRINUSE: address already in use 0.0.0.0:25565', null, 'address or port'],
+    ['./entrypoint.sh: line 22: ./server: No such file or directory', null, 'executable'],
+    ['/bin/sh: python: not found', null, 'executable'],
+    ['java.lang.OutOfMemoryError: Java heap space', null, 'memory'],
+];
+foreach ($fixes as [$logs, $fix, $summary]) {
+    $report = $diagnose($logs);
+    $check(($report['fix'] ?? null) === $fix, 'Unexpected repair offer for: ' . $logs);
+    $check(str_contains(strtolower($report['summary']), strtolower($summary)), 'Unexpected diagnosis for repair case: ' . $logs);
+}
+$check(($diagnose('wine: failed to open "./Game.exe"', ['outcome' => 'timeout'])['fix'] ?? null) === ['type' => 'reinstall'], 'A timed-out capture with a repairable error must keep its repair offer.');
+$check(($diagnose('You need to agree to the EULA in order to run the server.', ['observations' => ['capture_mode' => 'existing']])['fix'] ?? null) === ['type' => 'eula'], 'Existing-log diagnoses must keep their repair offer for the user to confirm.');
+$check(!array_key_exists('fix', $diagnose('Unable to access jarfile x.jar', ['outcome' => 'running', 'observed_state' => 'running'])), 'A running server must not offer a repair.');
+$check(!array_key_exists('fix', $diagnose('', ['outcome' => 'timeout'])), 'A timeout without a recognized error must not offer a repair.');
+$check(!array_key_exists('fix', $diagnose('Unable to access jarfile x.jar', ['outcome' => 'connection_error'])), 'A connection error must not offer a repair.');
 $report = $diagnose('java.lang.UnsupportedClassVersionError: Main (class file version 65.0), this version only recognizes class file versions up to 61.0');
 $check(str_contains(implode(' ', $report['steps']), 'Java 21 or newer'), 'A Java class version must identify the minimum compatible runtime.');
 

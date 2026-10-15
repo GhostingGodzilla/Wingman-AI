@@ -6,6 +6,24 @@ This is the update log for Wingman AI. Each release explains what changed and an
 
 <!-- Add new user-facing changes here before the next release. -->
 
+## [0.4.0] - 2026-10-14
+
+### One-click fixes
+
+- Reports now offer a fix button for three common startup problems. Nothing changes until you click it and confirm in a pop-up:
+  - **Java version too old:** switch the server to a newer Java image from its egg's list. Wingman suggests the closest version that works and restarts the server.
+  - **Game files missing:** run Pelican's normal reinstall so the install script downloads the files again. Back up first, because a reinstall can overwrite files.
+  - **Minecraft EULA not accepted:** after you agree to the linked EULA, write `eula=true` to `eula.txt` and restart the server.
+- Each fix needs the matching Pelican permission (`startup.docker-image`, `settings.reinstall`, or `file.update`), checked again when you click. The automatic restart also needs `control.restart`.
+- Fixes come only from Wingman's built-in error checks, never from the AI model. Each one is recorded in the server's activity log, and each user is limited to three fixes per server every five minutes. The automatic watcher still never changes anything by itself.
+
+### Better detection
+
+- Recognizes Wine games whose program file is missing (for example `wine: failed to open "./Game.exe"`) as missing game files.
+- Recognizes Minecraft's "requires running the server with Java N or above" message as a Java version problem.
+
+Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/8.5**.
+
 ## [0.3.1] - 2026-10-14
 
 ### Installer no longer breaks the panel
@@ -46,7 +64,7 @@ Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/
 - Added basic error checks and optional hosted or local AI explanations with evidence and suggested fix steps.
 - Added server permissions, credential redaction, and encrypted AI connection settings.
 
-[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.4.0...HEAD
 [0.3.0]: https://github.com/GhostingGodzilla/Wingman-AI/releases/tag/v0.3.0
 [0.2.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/7c9182ffed703a36d182ab188ac2c58d494aa73e
 [0.1.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/8d759582f80dfd0029a5458f93898c25cb860122

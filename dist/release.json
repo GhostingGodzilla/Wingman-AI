@@ -1,7 +1,7 @@
 {
-    "version": "0.3.1",
+    "version": "0.4.0",
     "panel_version": "1.0.0-rc.1",
     "download_url": "https://raw.githubusercontent.com/GhostingGodzilla/Wingman-AI/main/dist/wingman-ai.zip",
-    "sha256": "67015f9a87483edb7f770d13f4a7cf40f34242c5d67b91092e9c43a64d472118",
+    "sha256": "4b9f1a1d6fc8d21929e8213f63c759ec90ff26f7f0ab03ef8c75f19dcdc30d7d",
     "release_notes_url": "https://github.com/GhostingGodzilla/Wingman-AI/blob/main/CHANGELOG.md"
 }

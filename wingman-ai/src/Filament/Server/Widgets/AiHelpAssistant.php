@@ -5,18 +5,30 @@ namespace Pelican\AiHelpAssistant\Filament\Server\Widgets;
 use App\Enums\SubuserPermission;
 use App\Models\Server;
 use App\Models\User;
+use Filament\Actions\Action;
+use Filament\Actions\Concerns\InteractsWithActions;
+use Filament\Actions\Contracts\HasActions;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
+use Filament\Notifications\Notification;
+use Filament\Schemas\Concerns\InteractsWithSchemas;
+use Filament\Schemas\Contracts\HasSchemas;
 use Filament\Widgets\Widget;
+use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 use Pelican\AiHelpAssistant\Services\AssistantSettings;
 use Pelican\AiHelpAssistant\Services\AutomaticStartupService;
+use Pelican\AiHelpAssistant\Services\RepairService;
 use Pelican\AiHelpAssistant\Services\StartupMonitorService;
 use Throwable;
 
-class AiHelpAssistant extends Widget
+class AiHelpAssistant extends Widget implements HasActions, HasSchemas
 {
+    use InteractsWithActions;
+    use InteractsWithSchemas;
+
     protected string $view = 'wingman-ai::widgets.wingman-ai';
 
     protected int|string|array $columnSpan = 'full';
@@ -31,6 +43,10 @@ class AiHelpAssistant extends Widget
 
     #[Locked]
     public array $autoStatus = [];
+
+    /** Hides the fix button for a report after its repair was applied on this page. */
+    #[Locked]
+    public ?string $appliedFix = null;
 
     public function mount(): void
     {
@@ -179,6 +195,109 @@ class AiHelpAssistant extends Widget
 
             return ['cancelled' => true];
         });
+    }
+
+    /** The repair for the displayed report, after checking this user's permission for it. */
+    protected function fixOffer(): ?array
+    {
+        $report = $this->report ?? $this->autoReport;
+        if ($report === null || ($this->appliedFix !== null && $this->appliedFix === $this->fixFingerprint($report))) {
+            return null;
+        }
+
+        try {
+            [$server, $user] = $this->context();
+
+            return app(RepairService::class)->offer($server, $user, $report);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    protected function fixSummary(array $offer): string
+    {
+        return match ($offer['type'] ?? null) {
+            'java_image' => 'Switch this server to a newer Java image and restart it.',
+            'reinstall' => 'Reinstall the server so its install script downloads the missing files again.',
+            'eula' => 'Accept the Minecraft EULA for this server and restart it.',
+            default => '',
+        };
+    }
+
+    /** Started only by a person from the report, with confirmation; never by the watcher. */
+    public function applyFixAction(): Action
+    {
+        $offer = $this->fixOffer();
+        $type = $offer['type'] ?? null;
+        $suggested = $offer['suggested'] ?? null;
+
+        return Action::make('applyFix')
+            ->label(match ($type) {
+                'java_image' => 'Switch Java version',
+                'reinstall' => 'Reinstall server',
+                'eula' => 'Accept EULA',
+                default => 'Apply fix',
+            })
+            ->visible($offer !== null)
+            ->color($type === 'reinstall' ? 'danger' : 'primary')
+            ->requiresConfirmation()
+            ->modalHeading(match ($type) {
+                'java_image' => 'Switch Java version?',
+                'reinstall' => 'Reinstall this server?',
+                'eula' => 'Accept the Minecraft EULA?',
+                default => 'Apply fix?',
+            })
+            ->modalDescription(match ($type) {
+                'java_image' => 'This server stopped because its Java version is too old for the game or its mods. Choose a newer Java image; Wingman switches the server to it and restarts it.'
+                    . ($suggested !== null ? ' Suggested: ' . $offer['images'][$suggested] . '.' : ''),
+                'reinstall' => 'Reinstalling stops the server and runs its install script again to download the missing files. Some files may be deleted or overwritten, so back up worlds and settings you want to keep first.',
+                'eula' => new HtmlString('By clicking &ldquo;I accept&rdquo; you agree to the <a href="https://www.minecraft.net/eula" target="_blank" rel="noopener noreferrer" class="underline">Minecraft EULA</a>. Wingman writes <code>eula=true</code> to <code>eula.txt</code> and restarts the server.'),
+                default => null,
+            })
+            ->modalSubmitActionLabel(match ($type) {
+                'reinstall' => 'Yes, reinstall',
+                'eula' => 'I accept',
+                default => 'Apply fix',
+            })
+            ->schema($type === 'java_image' ? [
+                Select::make('image')->label('Java image')
+                    ->options($offer['images'])
+                    ->default($suggested)
+                    ->selectablePlaceholder(false)
+                    ->required(),
+            ] : [])
+            ->action(function (array $data): void {
+                [$server, $user] = $this->context();
+                // Re-read the automatic report from encrypted storage; browser input only picks an offered image.
+                $report = $this->report ?? app(AutomaticStartupService::class)->latest($server, $user);
+                $image = is_string($data['image'] ?? null) ? $data['image'] : null;
+
+                try {
+                    $message = app(RepairService::class)->apply($server, $user, $report, $image);
+                } catch (ValidationException $exception) {
+                    Notification::make()->title('Fix not applied')
+                        ->body(collect($exception->errors())->flatten()->first() ?? 'The fix could not be applied.')
+                        ->danger()->send();
+
+                    return;
+                } catch (Throwable $exception) {
+                    logger()->warning('Wingman AI repair failed.', ['exception_type' => $exception::class]);
+                    Notification::make()->title('Fix failed')
+                        ->body('Check the panel logs or the Wings connection, then try again.')
+                        ->danger()->send();
+
+                    return;
+                }
+
+                $this->appliedFix = $this->fixFingerprint($report);
+                Notification::make()->title('Fix applied')->body($message)->success()->send();
+                $this->refreshAutomaticDiagnosis();
+            });
+    }
+
+    private function fixFingerprint(?array $report): string
+    {
+        return hash('sha256', json_encode([$report['generated_at'] ?? null, $report['summary'] ?? null, $report['fix'] ?? null]) ?: '');
     }
 
     protected function isAiConfigured(): bool

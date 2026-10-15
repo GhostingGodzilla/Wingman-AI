@@ -25,7 +25,7 @@ Replace `/var/www/pelican` if your panel is elsewhere. The installer downloads a
 
 Automatic protection is enabled by default and uses Pelican's background queue worker. It covers normal console, API, and scheduled starts while the browser is closed. Successful starts stay quiet; AI analysis is requested only for automatic failure or timeout reports. Switch automatic protection off in plugin settings if preferred. The manual **Start & Diagnose** and **Analyze existing logs** buttons remain available.
 
-Basic error checks work without an AI service. For a deeper explanation, configure a trusted hosted or local model in the plugin's settings. The automatic watcher never starts, restarts, stops, or repairs a server. It gives instructions for the user to review and apply.
+Basic error checks work without an AI service. For a deeper explanation, configure a trusted hosted or local model in the plugin's settings. The automatic watcher never starts, restarts, stops, or repairs a server. It gives instructions for the user to review and apply. For a Java version that is too old, missing game files, or an unaccepted Minecraft EULA, the report also offers a fix button that runs only after you click it and confirm.
 
 Read the [full installation and configuration guide](wingman-ai/README.md) for supported connection settings, access controls, and data handling.
 

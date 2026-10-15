@@ -22,4 +22,5 @@ Wingman AI is an independent Pelican Panel plugin. The user requires an update s
 - The current build explicitly targets Pelican `1.0.0-rc.1`, plugin API 1, and PHP 8.4/8.5. Do not widen compatibility without checking the target panel's actual plugin and console APIs.
 - Keep AI API keys out of source, browser state, logs, and release artifacts. Saved keys stay encrypted in the panel's private storage.
 - Reauthorize server access on each public action. Automatic observation must never issue a power action or apply a repair.
+- One-click repairs run only from a person's confirmed click. Offer them only from deterministic rule matches (never from AI output), check each repair's own Pelican permission at click time, and keep the list limited to fixes Pelican itself supports.
 - Installer paths, archive entries, backups, and rollback targets must stay within the selected panel's verified plugin directory. Do not follow symlinks or remove unrelated files.

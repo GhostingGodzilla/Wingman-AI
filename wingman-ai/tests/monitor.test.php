@@ -178,6 +178,10 @@ namespace App\Facades {
 }
 
 namespace Filament\Widgets { class Widget {} }
+namespace Filament\Actions\Contracts { interface HasActions {} }
+namespace Filament\Actions\Concerns { trait InteractsWithActions {} }
+namespace Filament\Schemas\Contracts { interface HasSchemas {} }
+namespace Filament\Schemas\Concerns { trait InteractsWithSchemas {} }
 namespace Filament\Facades {
     class Filament
     {
