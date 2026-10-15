@@ -78,6 +78,8 @@ class AiHelpAssistantPlugin implements Plugin, HasPluginSettings
                     TextInput::make('model')->label('Model')->maxLength(200)
                         ->helperText('Enter the model name offered by your AI service.')
                         ->required(fn (Get $get) => (bool) $get('ai_enabled')),
+                    TextInput::make('fallback_model')->label('Backup model (optional)')->maxLength(200)
+                        ->helperText('Used when the main model is busy or its limit is used up, for example a lighter model from the same service such as gemini-3.5-flash-lite. Busy errors are also retried automatically.'),
                     TextInput::make('api_key')->label('API key')->password()->maxLength(8192)->autocomplete('off')
                         ->helperText('Leave blank to keep the saved key. A local AI service may not require one.'),
                     Toggle::make('clear_api_key')->label('Remove the saved API key')->inline(false),

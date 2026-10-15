@@ -180,6 +180,8 @@ namespace Illuminate\Support\Facades {
         public static ?object $response = null;
         public static array $calls = [];
         public static ?\Throwable $failure = null;
+        /** Replies returned in order before falling back to $response. */
+        public static array $queue = [];
 
         public static function acceptJson(): object
         {
@@ -190,6 +192,14 @@ namespace Illuminate\Support\Facades {
                 {
                     Http::$calls[] = [$method, ...$arguments];
                     if ($method === 'post') {
+                        if (Http::$queue !== []) {
+                            $next = array_shift(Http::$queue);
+                            if ($next instanceof \Throwable) {
+                                throw $next;
+                            }
+
+                            return $next;
+                        }
                         if (Http::$failure !== null) {
                             throw Http::$failure;
                         }
@@ -232,6 +242,11 @@ namespace {
                 public function warning(string $message, array $context = []): void
                 {
                     $GLOBALS['integration_logs'][] = [$message, $context];
+                }
+
+                public function info(string $message, array $context = []): void
+                {
+                    $GLOBALS['integration_info'][] = [$message, $context];
                 }
             };
         }

@@ -120,7 +120,7 @@ Open **Plugins → Wingman AI → Settings**. Basic error checks work immediatel
 
 1. Enable **Use AI analysis**.
 2. Enter a trusted **Chat Completions API base URL**, including the API prefix such as `/v1`.
-3. Enter an available **model name**, and the provider's **API key** if required.
+3. Enter an available **model name**, and the provider's **API key** if required. Optionally enter a **backup model** (for example a lighter model from the same service). It is used when the main model is busy or its limit is used up. Busy errors (HTTP 5xx) are also retried automatically up to two times.
 4. Choose the output token setting accepted by that service and save.
 
 For an OpenAI connection, the base URL is `https://api.openai.com/v1`; use `max_completion_tokens` and a model available to your account that supports Chat Completions. Hosted API requests may incur charges from the provider. This plugin does not include an AI subscription or free API access.

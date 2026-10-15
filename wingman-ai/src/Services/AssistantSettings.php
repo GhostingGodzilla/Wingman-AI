@@ -61,6 +61,7 @@ class AssistantSettings
             'ai_enabled' => ['required', 'boolean'],
             'base_url' => ['nullable', 'string', 'max:1000'],
             'model' => ['nullable', 'string', 'max:200'],
+            'fallback_model' => ['nullable', 'string', 'max:200'],
             'api_key' => ['nullable', 'string', 'max:8192'],
             'clear_api_key' => ['nullable', 'boolean'],
             'watch_seconds' => ['required', 'integer', 'min:30', 'max:600'],
@@ -73,6 +74,7 @@ class AssistantSettings
         $settings = array_replace($current, $validated);
         $settings['base_url'] = rtrim(trim((string) ($validated['base_url'] ?? '')), '/');
         $settings['model'] = trim((string) ($validated['model'] ?? ''));
+        $settings['fallback_model'] = trim((string) ($validated['fallback_model'] ?? ''));
         $settings['api_key'] = !empty($validated['clear_api_key'])
             ? ''
             : (trim((string) ($validated['api_key'] ?? '')) ?: $current['api_key']);

@@ -293,6 +293,16 @@ $tests['endpoint settings permit local AI and reject credentials query fragments
     expectThrows(fn () => (new AssistantSettings())->save(settingsForm(['ai_enabled' => true])), ValidationException::class);
 };
 
+class InstantAiClient extends AiClient
+{
+    public array $pauses = [];
+
+    protected function pause(float $seconds): void
+    {
+        $this->pauses[] = $seconds;
+    }
+}
+
 function httpResponse(bool $successful, string $body, mixed $content, int $status = 0): object
 {
     return new class($successful, $body, $content, $status ?: ($successful ? 200 : 500)) {
@@ -331,7 +341,7 @@ $tests['AI transport uses configured provider authentication token parameter and
 
 $tests['AI transport explains failures by reason without exposing provider bodies'] = static function (): void {
     $settings = (new MemorySettings(['base_url' => 'https://ai.example.test/v1', 'model' => 'test']))->get();
-    $client = new AiClient();
+    $client = new InstantAiClient();
     $GLOBALS['integration_logs'] = [];
     foreach ([
         [httpResponse(false, 'provider-secret-body', null, 401), 'key', 'rejected the API key (HTTP 401)'],
@@ -357,7 +367,7 @@ $tests['AI transport explains failures by reason without exposing provider bodie
         expect($error->reason === $reason, 'Wrong reason for a connection failure: ' . $error->reason);
     }
     Http::$failure = null;
-    expect(count($GLOBALS['integration_logs']) === 12 && $GLOBALS['integration_logs'][0][1] === ['reason' => 'key', 'status' => 401], 'Each failure must be logged with its reason and status only.');
+    expect(count($GLOBALS['integration_logs']) === 12 && $GLOBALS['integration_logs'][0][1] === ['reason' => 'key', 'status' => 401, 'attempts' => 1], 'Each failure must be logged with its reason, status, and attempts only.');
     expect(!str_contains(json_encode($GLOBALS['integration_logs']), 'provider-secret-body'), 'The log must not contain provider bodies.');
     expect(AiServiceException::describe(new RuntimeException('connection reset')) === (new AiServiceException('connection'))->getMessage(), 'Unknown failures must read as connection problems.');
 };
@@ -386,6 +396,42 @@ $tests['ordinary hidden settings no longer garble logs while passwords stay mask
     $sent = json_encode($client->inputs[0]);
     expect(str_contains($sent, '[21:49:10]') && str_contains($sent, ':\/home\/container$'), 'Ordinary hidden values garbled the log sent to AI.');
     expect(!str_contains($sent, 'rcon-secret-4455'), 'A password still reached the AI.');
+};
+
+
+$tests['busy AI services are retried and a backup model is tried for busy or limited models'] = static function (): void {
+    $busy = fn () => httpResponse(false, '{"error":{"code":503,"message":"high demand"}}', null, 503);
+    $models = fn () => array_map(fn ($call) => $call[2]['model'], array_values(array_filter(Http::$calls, fn ($call) => $call[0] === 'post')));
+    $settings = (new MemorySettings(['base_url' => 'https://ai.example.test/v1', 'model' => 'main-model', 'fallback_model' => 'backup-model']))->get();
+    Http::$failure = null;
+
+    Http::$queue = [$busy(), $busy(), httpResponse(true, '{}', 'third time lucky')];
+    $client = new InstantAiClient();
+    expect($client->analyze($settings, []) === 'third time lucky' && $client->pauses === [1.5, 4.0] && $models() === ['main-model', 'main-model', 'main-model'], 'A busy model must be retried twice with growing waits.');
+
+    Http::$queue = [$busy(), $busy(), $busy(), httpResponse(true, '{}', 'backup answer')];
+    $client = new InstantAiClient();
+    expect($client->analyze($settings, []) === 'backup answer' && $models() === ['main-model', 'main-model', 'main-model', 'backup-model'], 'A still-busy model must hand over to the backup model.');
+
+    Http::$queue = [httpResponse(false, 'RESOURCE_EXHAUSTED', null, 429), httpResponse(true, '{}', 'backup answer')];
+    $client = new InstantAiClient();
+    expect($client->analyze($settings, []) === 'backup answer' && $client->pauses === [] && $models() === ['main-model', 'backup-model'], 'A used-up quota must go straight to the backup model.');
+
+    foreach ([[httpResponse(false, 'bad key', null, 401), 'key'], [httpResponse(false, 'unknown', null, 404), 'model'], [new RuntimeException('cURL error 28: Operation timed out'), 'timeout']] as [$reply, $reason]) {
+        Http::$queue = [$reply, httpResponse(true, '{}', 'must not be used')];
+        $client = new InstantAiClient();
+        $error = expectThrows(fn () => $client->analyze($settings, []), AiServiceException::class);
+        expect($error->reason === $reason && count($models()) === 1 && $client->pauses === [], 'A ' . $reason . ' failure must not be retried or handed to the backup model.');
+        Http::$queue = [];
+    }
+
+    Http::$queue = [$busy(), $busy(), $busy()];
+    $GLOBALS['integration_logs'] = [];
+    $client = new InstantAiClient();
+    $error = expectThrows(fn () => $client->analyze(array_replace($settings, ['fallback_model' => '']), []), AiServiceException::class);
+    expect($error->reason === 'service' && count($models()) === 3 && end($GLOBALS['integration_logs'])[1] === ['reason' => 'service', 'status' => 503, 'attempts' => 3], 'Without a backup model the last busy error must be reported with its attempts.');
+    Http::$queue = [];
+    expectThrows(fn () => (new InstantAiClient())->analyze(array_replace($settings, ['model' => ' ', 'fallback_model' => '']), []), AiServiceException::class);
 };
 
 $failures = 0;

@@ -7,6 +7,9 @@ use Throwable;
 
 class AiClient
 {
+    /** Retries a busy service while at most this many seconds have passed. */
+    private const RETRY_WINDOW_SECONDS = 20;
+
     /**
      * @param  ?string  $instructions  System prompt; defaults to the startup diagnosis prompt.
      * @param  ?int  $maxTokens  Output token budget; defaults to the configured setting.
@@ -22,40 +25,77 @@ class AiClient
         }
 
         $tokenParameter = $settings['token_parameter'] === 'max_tokens' ? 'max_tokens' : 'max_completion_tokens';
-        try {
-            $response = $request->post(rtrim($settings['base_url'], '/') . '/chat/completions', [
-                'model' => $settings['model'],
-                'stream' => false,
-                $tokenParameter => $maxTokens ?? (int) $settings['max_response_tokens'],
-                'messages' => [
-                    ['role' => 'system', 'content' => $instructions ?? $this->instructions()],
-                    ['role' => 'user', 'content' => json_encode($input, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE)],
-                ],
-            ]);
-        } catch (Throwable $exception) {
-            $this->failed(AiServiceException::fromThrowable($exception));
+        $messages = [
+            ['role' => 'system', 'content' => $instructions ?? $this->instructions()],
+            ['role' => 'user', 'content' => json_encode($input, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE)],
+        ];
+        $models = array_values(array_unique(array_filter([trim((string) $settings['model']), trim((string) ($settings['fallback_model'] ?? ''))], 'strlen')));
+        if ($models === []) {
+            $this->failed(new AiServiceException('model'), 0);
         }
+        $started = microtime(true);
+        $attempts = 0;
+        $failure = null;
+        foreach ($models as $index => $model) {
+            for ($try = 0; $try < 3; $try++) {
+                $attempts++;
+                try {
+                    $response = $request->post(rtrim($settings['base_url'], '/') . '/chat/completions', [
+                        'model' => $model,
+                        'stream' => false,
+                        $tokenParameter => $maxTokens ?? (int) $settings['max_response_tokens'],
+                        'messages' => $messages,
+                    ]);
+                } catch (Throwable $exception) {
+                    // A timeout has already used the time budget, so it is never retried.
+                    $failure = AiServiceException::fromThrowable($exception);
+                    break 2;
+                }
+                if ($response->successful()) {
+                    return $this->content($response, $index > 0, $attempts);
+                }
+                // Never expose provider response bodies: they may echo console text or credentials.
+                $failure = AiServiceException::fromResponse((int) $response->status(), (string) $response->body());
+                // A busy service ("high demand", 5xx) usually recovers within seconds.
+                if ($failure->reason !== 'service' || $try === 2 || microtime(true) - $started > self::RETRY_WINDOW_SECONDS) {
+                    break;
+                }
+                $this->pause($try === 0 ? 1.5 : 4.0);
+            }
+            // Only a busy or rate-limited model is worth trying the backup model for.
+            if (!in_array($failure->reason, ['service', 'limit'], true)) {
+                break;
+            }
+        }
+        $this->failed($failure, $attempts);
+    }
 
-        // Never expose provider response bodies: they may echo console text or credentials.
-        if (!$response->successful()) {
-            $this->failed(AiServiceException::fromResponse((int) $response->status(), (string) $response->body()));
-        }
+    private function content(object $response, bool $usedBackup, int $attempts): string
+    {
         if (strlen($response->body()) > 1024 * 1024) {
-            $this->failed(new AiServiceException('too_large'));
+            $this->failed(new AiServiceException('too_large'), $attempts);
         }
-
         $content = $response->json('choices.0.message.content');
         if (!is_string($content) || trim($content) === '') {
-            $this->failed(new AiServiceException('empty'));
+            $this->failed(new AiServiceException('empty'), $attempts);
+        }
+        if ($usedBackup || $attempts > 1) {
+            logger()->info('Wingman AI request succeeded after retrying.', ['attempts' => $attempts, 'backup_model' => $usedBackup]);
         }
 
         return $content;
     }
 
-    /** Logs only the reason and status, so an admin can see why AI answers are missing. */
-    private function failed(AiServiceException $exception): never
+    /** Waits before retrying a busy AI service. */
+    protected function pause(float $seconds): void
     {
-        logger()->warning('Wingman AI request failed.', ['reason' => $exception->reason, 'status' => $exception->status]);
+        usleep((int) ($seconds * 1000000));
+    }
+
+    /** Logs only the reason, status, and attempts, so an admin can see why AI answers are missing. */
+    private function failed(AiServiceException $exception, int $attempts = 1): never
+    {
+        logger()->warning('Wingman AI request failed.', ['reason' => $exception->reason, 'status' => $exception->status, 'attempts' => $attempts]);
 
         throw $exception;
     }

@@ -15,6 +15,7 @@ return [
     'ai_enabled' => false,
     'base_url' => '',
     'model' => '',
+    'fallback_model' => '',
     'api_key' => '',
     'watch_seconds' => 180,
     'daily_limit' => 20,

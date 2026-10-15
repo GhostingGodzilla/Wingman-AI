@@ -6,6 +6,16 @@ This is the update log for Wingman AI. Each release explains what changed and an
 
 <!-- Add new user-facing changes here before the next release. -->
 
+## [0.7.2] - 2026-10-15
+
+### Fewer failed AI answers
+
+- When the AI service is busy (for example Gemini's "This model is currently experiencing high demand", HTTP 503), Wingman now waits a moment and tries again, up to two more times, instead of giving up.
+- New optional **Backup model** setting. If the main model is still busy, or its request limit or free daily quota is used up, Wingman tries the backup model. A lighter model from the same service, such as `gemini-3.5-flash-lite`, works well.
+- A wrong API key, an unknown model, or a request that took too long is not retried, so the reason is shown right away.
+
+Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/8.5**.
+
 ## [0.7.1] - 2026-10-15
 
 ### Clearer AI errors
@@ -158,7 +168,7 @@ Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/
 - Added basic error checks and optional hosted or local AI explanations with evidence and suggested fix steps.
 - Added server permissions, credential redaction, and encrypted AI connection settings.
 
-[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.7.2...HEAD
 [0.3.0]: https://github.com/GhostingGodzilla/Wingman-AI/releases/tag/v0.3.0
 [0.2.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/7c9182ffed703a36d182ab188ac2c58d494aa73e
 [0.1.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/8d759582f80dfd0029a5458f93898c25cb860122
