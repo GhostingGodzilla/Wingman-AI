@@ -105,6 +105,41 @@ namespace Pelican\AiHelpAssistant\Services {
         }
     }
 
+    class BackupDoctorService
+    {
+        public array $calls = [];
+        public ?\Throwable $failure = null;
+        public function status(\App\Models\Server $server, \App\Models\User $user): ?array { $this->calls[] = 'status'; if ($this->failure !== null) { throw $this->failure; } return ['limit' => 0, 'count' => 0, 'last' => null, 'scheduled' => false, 'issues' => ['limit is 0'], 'can_backup' => false, 'can_schedule' => false]; }
+        public function backupNow(\App\Models\Server $server, \App\Models\User $user): string { $this->calls[] = 'backupNow'; return 'Backup started.'; }
+        public function scheduleNightly(\App\Models\Server $server, \App\Models\User $user): string { $this->calls[] = 'scheduleNightly'; if ($this->failure !== null) { throw $this->failure; } return 'Nightly backups are on.'; }
+    }
+
+    class DailySummaryService
+    {
+        public int $calls = 0;
+        public function summary(\App\Models\Server $server, \App\Models\User $user): ?array { $this->calls++; return ['lines' => ['1 crash'], 'quiet' => false]; }
+    }
+
+    class UsageHistoryService
+    {
+        public int $calls = 0;
+        public function summary(\App\Models\Server $server): array { $this->calls++; return ['running_hours' => 2, 'suggestions' => ['Learning.']]; }
+    }
+
+    class ConfigHelperService
+    {
+        public array $calls = [];
+        public ?\Throwable $failure = null;
+        public function available(\App\Models\Server $server, \App\Models\User $user): bool { return true; }
+        public function propose(\App\Models\Server $server, \App\Models\User $user, string $request): array
+        {
+            $this->calls[] = ['propose', $request];
+            if ($this->failure !== null) { throw $this->failure; }
+            return ['id' => 'config-1', 'file' => 'server.properties', 'summary' => 'Turn on whitelist.', 'notes' => '', 'restart' => true, 'diff' => [['+', 'white-list=true']]];
+        }
+        public function apply(\App\Models\Server $server, \App\Models\User $user, string $id): string { $this->calls[] = ['apply', $id]; return 'Saved.'; }
+    }
+
     class EggAdvisorService
     {
         public array $calls = [];
@@ -239,11 +274,15 @@ namespace {
     use Filament\Notifications\Notification;
     use Pelican\AiHelpAssistant\Services\AskService;
     use Pelican\AiHelpAssistant\Services\AutomaticStartupService;
+    use Pelican\AiHelpAssistant\Services\BackupDoctorService;
+    use Pelican\AiHelpAssistant\Services\ConfigHelperService;
+    use Pelican\AiHelpAssistant\Services\DailySummaryService;
     use Pelican\AiHelpAssistant\Services\EggAdvisorService;
     use Pelican\AiHelpAssistant\Services\IncidentService;
     use Pelican\AiHelpAssistant\Services\PerformanceService;
     use Pelican\AiHelpAssistant\Services\RepairService;
     use Pelican\AiHelpAssistant\Services\SafeReinstallService;
+    use Pelican\AiHelpAssistant\Services\UsageHistoryService;
     use Pelican\AiHelpAssistant\Services\StartupMonitorService;
 
     function app(string $class): object
@@ -285,7 +324,8 @@ namespace {
         $automatic = new AutomaticStartupService();
         $manual = new StartupMonitorService();
         $GLOBALS['ui_services'] = [AutomaticStartupService::class => $automatic, StartupMonitorService::class => $manual, AssistantSettings::class => new AssistantSettings(), RepairService::class => new RepairService(), EggAdvisorService::class => new EggAdvisorService(),
-            IncidentService::class => new IncidentService(), SafeReinstallService::class => new SafeReinstallService(), AskService::class => new AskService(), PerformanceService::class => new PerformanceService()];
+            IncidentService::class => new IncidentService(), SafeReinstallService::class => new SafeReinstallService(), AskService::class => new AskService(), PerformanceService::class => new PerformanceService(),
+            BackupDoctorService::class => new BackupDoctorService(), DailySummaryService::class => new DailySummaryService(), UsageHistoryService::class => new UsageHistoryService(), ConfigHelperService::class => new ConfigHelperService()];
         Notification::$sent = [];
 
         return [new AiHelpAssistant(), $automatic, $manual, $server];
@@ -555,6 +595,48 @@ namespace {
         $reinstalls->pending = ['backup' => 'uuid', 'since' => '2026-10-14T23:00:00+00:00'];
         $reinstalls->notice = ['message' => 'The backup failed, so Wingman did not reinstall the server.', 'at' => '2026-10-14T22:00:00+00:00'];
         uiExpect($status->invoke($widget)['pending']['backup'] === 'uuid', 'A pending backup must be shown.');
+    };
+
+    $tests['server health reads each section on its own and a failing one never breaks the page'] = static function (): void {
+        [$widget] = uiFixture();
+        $doctor = $GLOBALS['ui_services'][BackupDoctorService::class];
+        $health = (new ReflectionMethod($widget, 'serverHealth'))->invoke($widget);
+        uiExpect($health['backups']['issues'] === ['limit is 0'] && $health['day']['lines'] === ['1 crash'] && $health['usage']['running_hours'] === 2, 'All health sections must be shown.');
+        $doctor->failure = new RuntimeException('database down');
+        $health = (new ReflectionMethod($widget, 'serverHealth'))->invoke($widget);
+        uiExpect($health['backups'] === null && $health['day'] !== null && $health['usage'] !== null, 'A failing section must be hidden without hiding the others.');
+        $GLOBALS['ui_services'][AssistantSettings::class]->settings['usage_tracking_enabled'] = false;
+        uiExpect((new ReflectionMethod($widget, 'serverHealth'))->invoke($widget)['usage'] === null, 'Disabled usage tracking must hide usage.');
+        for ($i = 0; $i < 3; $i++) { $widget->refreshAutomaticDiagnosis(); }
+        uiExpect(array_intersect(['backupNow', 'scheduleNightly'], $doctor->calls) === [], 'Polling started a backup or schedule.');
+    };
+
+    $tests['backup buttons reach the backup doctor and report the result'] = static function (): void {
+        [$widget] = uiFixture();
+        $doctor = $GLOBALS['ui_services'][BackupDoctorService::class];
+        $widget->backupNow();
+        uiExpect(end(Notification::$sent) === ['title' => 'Backup', 'body' => 'Backup started.', 'status' => 'success'], 'A backup must report success.');
+        $doctor->failure = \Illuminate\Validation\ValidationException::withMessages(['backup' => 'This server cannot keep any backups: its backup limit is 0.']);
+        $widget->scheduleNightlyBackups();
+        uiExpect(end(Notification::$sent)['status'] === 'danger' && str_contains(end(Notification::$sent)['body'], 'backup limit is 0'), 'A refused schedule must be explained.');
+        uiExpect(in_array('backupNow', $doctor->calls, true) && in_array('scheduleNightly', $doctor->calls, true), 'Both buttons must reach the service.');
+    };
+
+    $tests['settings changes are proposed for review and never applied by polling'] = static function (): void {
+        [$widget] = uiFixture();
+        $helper = $GLOBALS['ui_services'][ConfigHelperService::class];
+        uiExpect((new ReflectionMethod($widget, 'canChangeSettings'))->invoke($widget) === true, 'The helper must follow the service availability.');
+        $widget->configRequest = 'turn on whitelist';
+        $widget->proposeConfig();
+        uiExpect($widget->configProposal['id'] === 'config-1' && $helper->calls === [['propose', 'turn on whitelist']], 'A proposal must be stored for review only.');
+        uiExpect((new ReflectionProperty($widget, 'configProposal'))->getAttributes(Locked::class) !== [], 'The proposal must be locked against browser edits.');
+        for ($i = 0; $i < 3; $i++) { $widget->refreshAutomaticDiagnosis(); }
+        uiExpect(!in_array('apply', array_column($helper->calls, 0), true), 'Polling applied a settings change.');
+        $widget->dismissConfig();
+        uiExpect($widget->configProposal === null, 'Dismiss must clear the proposal.');
+        $helper->failure = new RuntimeException('secret-file-content');
+        $widget->proposeConfig();
+        uiExpect($widget->configProposal === null && !str_contains(json_encode(Notification::$sent), 'secret-file-content'), 'Failures must not leak details.');
     };
 
     $failed = 0;

@@ -14,6 +14,7 @@ Wingman AI is an independent Pelican Panel plugin. The user requires an update s
 
 - Build the tracked installation artifacts with `php wingman-ai/tools/package.php`. Commit the ZIP, SHA-256 file, release manifest, and root `update.json` together with the source and changelog.
 - `--release-tag vX.Y.Z` is for the GitHub release workflow: it builds manifests pointing at that release's attached ZIP. Do not commit this workflow-only manifest over the normal tracked manifest.
+- Before releasing any change to the widget template, run `php wingman-ai/tools/render-check.php /path/to/pelican` on a machine with Pelican installed. It compiles the template with Pelican's own Blade compiler and renders it with test data. `php -l` alone cannot catch template mistakes: 0.6.0 passed it and still broke every Console page. Use `@php ... @endphp` blocks, never the inline `@php(...)` form.
 - Run the relevant plugin, installer, release-summary, and PHP syntax checks. Keep `wingman-ai/VALIDATION.md` accurate about what was actually tested; tests with framework substitutes do not prove a live Pelican installation.
 - Push the source to `main`. A matching new `vX.Y.Z` tag triggers the checked GitHub Release with its summary and installation downloads.
 

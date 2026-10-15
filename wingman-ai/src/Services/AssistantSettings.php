@@ -56,6 +56,8 @@ class AssistantSettings
             'backup_before_reinstall' => ['required', 'boolean'],
             'ask_enabled' => ['required', 'boolean'],
             'ask_daily_limit' => ['required', 'integer', 'min:1', 'max:1000'],
+            'config_helper_enabled' => ['required', 'boolean'],
+            'usage_tracking_enabled' => ['required', 'boolean'],
             'ai_enabled' => ['required', 'boolean'],
             'base_url' => ['nullable', 'string', 'max:1000'],
             'model' => ['nullable', 'string', 'max:200'],
@@ -89,7 +91,7 @@ class AssistantSettings
         foreach (['watch_seconds', 'daily_limit', 'max_response_tokens', 'auto_daily_limit', 'auto_cooldown_seconds', 'ask_daily_limit'] as $field) {
             $settings[$field] = (int) $settings[$field];
         }
-        foreach (['enabled', 'ai_enabled', 'automatic_enabled', 'crash_watch_enabled', 'install_check_enabled', 'backup_before_reinstall', 'ask_enabled'] as $field) {
+        foreach (['enabled', 'ai_enabled', 'automatic_enabled', 'crash_watch_enabled', 'install_check_enabled', 'backup_before_reinstall', 'ask_enabled', 'config_helper_enabled', 'usage_tracking_enabled'] as $field) {
             $settings[$field] = (bool) $settings[$field];
         }
 

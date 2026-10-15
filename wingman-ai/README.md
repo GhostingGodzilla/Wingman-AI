@@ -38,6 +38,25 @@ After every install or reinstall, Wingman reads the install log. Many install sc
 
 People with console access can type a question about their server (for example "How do I add mods?" or "Why does it lag at night?"). Wingman answers using the server's game, limits, startup settings (with startup access), and recent console output. It cannot change anything. Each person can ask a limited number of questions per day (20 by default), and the box needs an AI connection. AI answers can be wrong; check before changing anything important.
 
+### Server health
+
+A collapsible **Server health** section shows:
+
+- **Backups:** how many backups the server keeps, the newest one, and whether automatic backups are scheduled. It warns when the backup limit is 0, when there are no backups, when the newest is over a week old, when nothing is scheduled, and when scheduled backups cannot run because the panel's task timer (cron) is not running. **Back up now** starts a panel backup; **Back up every night** creates a normal Pelican schedule (4 AM in your timezone) whose backup task replaces the oldest unlocked backup when the limit is reached. You can change or remove the schedule on the Schedules page.
+- **Last 24 hours:** crashes, starts, stops, reinstalls, backups made or failed, and disk growth, from the panel's own activity log (needs `activity.read`).
+- **Usage and limits:** Wingman records CPU, memory, and disk use every 10 minutes through Pelican's scheduler and keeps 7 days of hourly figures in the panel cache. After a day of use it suggests better limits, for example raising memory that keeps running out, lowering a limit the server never comes close to, setting a limit on an unlimited server, or warning when the disk will fill up. Usage tracking can be turned off in the plugin settings.
+
+### Change a game setting
+
+People who may read and edit a server's files can describe a change in plain words, like "allow 8 players" or "turn on whitelist". With an AI connection, Wingman:
+
+1. Finds the server's settings files: the files the egg manages, plus text settings files (`.properties`, `.cfg`, `.ini`, `.json`, `.yml`, `.toml`, and similar, up to 256 KB) in the server folder and two folder levels below it. Logs, worlds, mods, and Steam folders are skipped.
+2. Lets the AI choose the file, then sends it a copy with passwords and other secret values replaced by `[REDACTED]`.
+3. Accepts only exact line changes. It refuses changes to hidden values, to settings Pelican manages from the Startup page, and to lines it cannot find exactly once.
+4. Shows the change before and after. Nothing is written until you click **Apply change**. Wingman checks the file has not changed in the meantime and keeps the old file next to it as `<file>.wingman-<date>.bak`.
+
+Restart the server afterwards for most changes to take effect.
+
 ### One-click fixes
 
 For three well-understood problems, the report offers a fix button. Nothing changes until you click it and confirm:
@@ -113,6 +132,7 @@ AI requests use the Chat Completions format for compatibility with hosted and lo
 ## Access and data
 
 - Existing Pelican permissions apply. Reading output requires console websocket access; manually starting requires `control.start`. Manual startup settings are included only with `startup.read`. Viewing an automatic report requires both console access and `startup.read`, since background analysis runs with the current server owner's permitted context. The manual assistant's own websocket token is read only.
+- Backup doctor needs `backup.read` to view, `backup.create` to back up, and `schedule.create` with `backup.create` to schedule nightly backups. Settings changes need `file.read`, `file.read-content`, and `file.update`; pending changes are stored encrypted for 15 minutes.
 - Crash and install checks run in the background with the server owner's permitted context, like automatic startup reports, and need the same access to view (console and `startup.read`). Performance checks and questions need console access; startup details are included only with `startup.read`.
 - Clicking a fix button and confirming authorizes only that fix and, with `control.restart`, a restart. Each fix requires its own permission, listed under [One-click fixes](#one-click-fixes).
 - Clicking **Start & Diagnose** authorizes a normal server start. Opening the Console page only retrieves the automatic status/report; it does not start a server. Cancelling a manual capture does not stop the server or disable automatic protection.

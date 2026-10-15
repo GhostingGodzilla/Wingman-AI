@@ -6,6 +6,31 @@ This is the update log for Wingman AI. Each release explains what changed and an
 
 <!-- Add new user-facing changes here before the next release. -->
 
+## [0.7.0] - 2026-10-15
+
+### Server health
+
+- New **Server health** section in the Wingman box.
+- **Backups:** shows how many backups a server keeps and the newest one. It warns when the backup limit is 0, there are no backups, the newest is over a week old, nothing is scheduled, or scheduled backups cannot run because the panel's task timer is not running.
+- **Back up now** starts a panel backup. **Back up every night** creates a normal Pelican schedule that backs the server up at 4 AM and replaces the oldest unlocked backup when the limit is reached.
+- **Last 24 hours:** crashes, starts, stops, reinstalls, backups, and disk growth at a glance.
+- **Usage and limits:** Wingman records CPU, memory, and disk use every 10 minutes and, after a day, suggests better limits (raise, lower, or set one) and warns before the disk fills up.
+
+### Change a game setting
+
+- Describe a change in plain words ("allow 8 players", "turn on whitelist"). Wingman finds the right settings file and proposes exact line changes. It shows them before and after, and writes nothing until you click **Apply change**.
+- Passwords in the file are hidden from the AI. Wingman refuses to change hidden values or settings Pelican manages from the Startup page, and keeps the old file as a `.bak` copy.
+
+### Easier to read
+
+- Ask Wingman, the egg check, and the new sections are collapsible and remember whether you opened them, even while the box refreshes.
+
+### Settings
+
+- New settings to turn off the settings helper and usage tracking. Both are on by default.
+
+Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/8.5**.
+
 ## [0.6.1] - 2026-10-14
 
 ### Fixed
@@ -123,7 +148,7 @@ Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/
 - Added basic error checks and optional hosted or local AI explanations with evidence and suggested fix steps.
 - Added server permissions, credential redaction, and encrypted AI connection settings.
 
-[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.7.0...HEAD
 [0.3.0]: https://github.com/GhostingGodzilla/Wingman-AI/releases/tag/v0.3.0
 [0.2.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/7c9182ffed703a36d182ab188ac2c58d494aa73e
 [0.1.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/8d759582f80dfd0029a5458f93898c25cb860122

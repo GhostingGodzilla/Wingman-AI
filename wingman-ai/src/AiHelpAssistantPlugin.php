@@ -61,6 +61,13 @@ class AiHelpAssistantPlugin implements Plugin, HasPluginSettings
                 ->schema([
                     Toggle::make('ask_enabled')->label('Show the Ask Wingman box')->inline(false),
                     TextInput::make('ask_daily_limit')->label('Questions per user per day')->numeric()->minValue(1)->maxValue(1000)->required(),
+                    Toggle::make('config_helper_enabled')->label('Let people change game settings with AI help')->inline(false)
+                        ->helperText('Needs file read and edit permission. Every change is shown first and the old file is kept as a .bak copy.'),
+                ]),
+            Section::make('Usage tracking')
+                ->schema([
+                    Toggle::make('usage_tracking_enabled')->label('Record CPU, memory, and disk use every 10 minutes')->inline(false)
+                        ->helperText('Used for limit suggestions and the 24-hour summary. Kept for 7 days in the panel cache.'),
                 ]),
             Section::make('AI connection')->description('Choose an AI service or a model running on your own machine. Basic error checks work without an AI connection.')
                 ->schema([

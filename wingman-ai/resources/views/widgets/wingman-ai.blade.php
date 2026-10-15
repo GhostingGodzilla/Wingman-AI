@@ -128,9 +128,111 @@
             </div>
         @endif
 
+        @php
+            $health = $this->serverHealth();
+        @endphp
+        @if ($health['backups'] || $health['day'] || $health['usage'])
+            <details wire:ignore.self style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid rgba(127, 127, 127, 0.25);" aria-label="Server health" @if ($health['backups'] && $health['backups']['issues'] !== []) open @endif>
+                <summary class="cursor-pointer text-sm font-semibold text-gray-950 dark:text-white">
+                    Server health
+                    @if ($health['backups'] && $health['backups']['issues'] !== [])
+                        <span class="text-xs font-normal" style="color: rgb(217, 119, 6);">&middot; {{ count($health['backups']['issues']) }} backup {{ count($health['backups']['issues']) === 1 ? 'warning' : 'warnings' }}</span>
+                    @endif
+                </summary>
+
+                @if ($health['backups'])
+                    @php
+                        $backups = $health['backups'];
+                    @endphp
+                    <div class="mt-3">
+                        <p class="text-sm font-semibold text-gray-950 dark:text-white">Backups</p>
+                        <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">
+                            {{ $backups['count'] }} of {{ $backups['limit'] }} {{ $backups['limit'] === 1 ? 'backup' : 'backups' }} kept.
+                            @if ($backups['last'])
+                                Newest: <time datetime="{{ $backups['last'] }}">{{ \Illuminate\Support\Carbon::parse($backups['last'])->diffForHumans() }}</time>.
+                            @endif
+                            {{ $backups['scheduled'] ? 'Automatic backups are scheduled.' : '' }}
+                        </p>
+                        @foreach ($backups['issues'] as $issue)
+                            <p class="mt-1 text-sm" style="color: rgb(217, 119, 6);">&bull; {{ $issue }}</p>
+                        @endforeach
+                        @if ($backups['can_backup'] || $backups['can_schedule'])
+                            <div class="mt-2 flex flex-wrap items-center gap-3">
+                                @if ($backups['can_backup'])
+                                    <x-filament::button size="sm" color="gray" wire:click="backupNow" wire:loading.attr="disabled" wire:target="backupNow">Back up now</x-filament::button>
+                                @endif
+                                @if ($backups['can_schedule'])
+                                    <x-filament::button size="sm" wire:click="scheduleNightlyBackups" wire:confirm="Back up this server every night at 4 AM? When the backup limit is reached, the oldest unlocked backup is replaced." wire:loading.attr="disabled" wire:target="scheduleNightlyBackups">Back up every night</x-filament::button>
+                                @endif
+                            </div>
+                        @endif
+                    </div>
+                @endif
+
+                @if ($health['day'])
+                    <div class="mt-3">
+                        <p class="text-sm font-semibold text-gray-950 dark:text-white">Last 24 hours</p>
+                        <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">{{ $health['day']['quiet'] ? 'Nothing happened: no crashes, starts, stops, reinstalls, or backups.' : implode(' · ', $health['day']['lines']) . '.' }}</p>
+                    </div>
+                @endif
+
+                @if ($health['usage'])
+                    @php
+                        $usage = $health['usage'];
+                    @endphp
+                    <div class="mt-3">
+                        <p class="text-sm font-semibold text-gray-950 dark:text-white">Usage and limits</p>
+                        @if ($usage['running_hours'] > 0)
+                            <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">
+                                Over {{ $usage['running_hours'] }} running {{ $usage['running_hours'] === 1 ? 'hour' : 'hours' }}: memory peaked at {{ $usage['memory_peak_mb'] }} MB, CPU averaged {{ $usage['cpu_average'] }}% (peak {{ $usage['cpu_peak'] }}%), disk is {{ $usage['disk_mb'] }} MB.
+                            </p>
+                        @endif
+                        @foreach ($usage['suggestions'] as $suggestion)
+                            <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">&bull; {{ $suggestion }}</p>
+                        @endforeach
+                    </div>
+                @endif
+            </details>
+        @endif
+
+        @if ($this->canChangeSettings())
+            <details wire:ignore.self style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid rgba(127, 127, 127, 0.25);" aria-label="Change a game setting">
+                <summary class="cursor-pointer text-sm font-semibold text-gray-950 dark:text-white">Change a game setting</summary>
+                <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Describe what you want, like "allow 8 players" or "turn on whitelist". Wingman finds the right settings file and shows the exact change first. Passwords in the file are hidden from the AI, and the old file is kept as a .bak copy.</p>
+                <form wire:submit="proposeConfig" class="mt-3 flex flex-wrap items-center gap-3">
+                    <input type="text" wire:model="configRequest" maxlength="300" placeholder="What should change?" aria-label="What should change?"
+                        class="rounded-lg text-sm text-gray-950 dark:text-white" style="flex: 1 1 16rem; min-width: 0; padding: 0.5rem 0.75rem; border: 1px solid rgba(127, 127, 127, 0.4); background: transparent;">
+                    <x-filament::button type="submit" color="gray" wire:loading.attr="disabled" wire:target="proposeConfig">
+                        <span wire:loading.remove wire:target="proposeConfig">Suggest change</span>
+                        <span wire:loading wire:target="proposeConfig">Looking… this can take up to a minute</span>
+                    </x-filament::button>
+                </form>
+                @if ($configProposal)
+                    <div class="mt-3 rounded-lg p-3" style="border: 1px solid rgba(127, 127, 127, 0.3);">
+                        <p class="text-sm font-semibold text-gray-950 dark:text-white">{{ $configProposal['summary'] }}</p>
+                        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">File: <span class="font-mono">{{ $configProposal['file'] }}</span></p>
+                        @if ($configProposal['notes'] !== '')
+                            <p class="mt-2 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{{ $configProposal['notes'] }}</p>
+                        @endif
+                        @if ($configProposal['diff'] !== [])
+                            <div class="mt-2 overflow-auto rounded-lg font-mono text-xs" style="max-height: 20rem; border: 1px solid rgba(127, 127, 127, 0.3);">
+                                @foreach ($configProposal['diff'] as [$type, $line])
+                                    <div style="white-space: pre-wrap; word-break: break-all; padding: 0 0.5rem; {{ $type === '+' ? 'background: rgba(34, 197, 94, 0.18);' : ($type === '-' ? 'background: rgba(239, 68, 68, 0.18);' : ($type === '…' ? 'opacity: 0.6; font-style: italic;' : '')) }}">{{ $type === '…' ? '… ' : $type . ' ' }}{{ $line }}</div>
+                                @endforeach
+                            </div>
+                        @endif
+                        <div class="mt-3 flex flex-wrap items-center gap-3">
+                            {{ $this->applyConfigAction }}
+                            <x-filament::button color="gray" wire:click="dismissConfig">Dismiss</x-filament::button>
+                        </div>
+                    </div>
+                @endif
+            </details>
+        @endif
+
         @if ($this->canAsk())
-            <div style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid rgba(127, 127, 127, 0.25);" aria-label="Ask Wingman">
-                <p class="text-sm font-semibold text-gray-950 dark:text-white">Ask Wingman</p>
+            <details wire:ignore.self style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid rgba(127, 127, 127, 0.25);" aria-label="Ask Wingman">
+                <summary class="cursor-pointer text-sm font-semibold text-gray-950 dark:text-white">Ask Wingman</summary>
                 <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Ask anything about this server, like how to add mods or why it lags. Wingman answers using this server's game, settings, and recent console output. It cannot change anything.</p>
                 <form wire:submit="ask" class="mt-3 flex flex-wrap items-center gap-3">
                     <input type="text" wire:model="question" maxlength="{{ \Pelican\AiHelpAssistant\Services\AskService::MAX_QUESTION }}" placeholder="Your question" aria-label="Your question"
@@ -147,7 +249,7 @@
                         <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">AI answers can be wrong. Check before changing anything important.</p>
                     </div>
                 @endif
-            </div>
+            </details>
         @endif
 
         @php
@@ -155,11 +257,11 @@
         @endphp
         @if ($eggTools)
             {{-- Inline styles keep this readable even when the panel has not rebuilt its CSS for plugins. --}}
-            <div style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid rgba(127, 127, 127, 0.25);" aria-label="Egg check">
-                <div class="flex flex-wrap items-center justify-between gap-3">
+            <details wire:ignore.self style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid rgba(127, 127, 127, 0.25);" aria-label="Egg check">
+                <summary class="cursor-pointer text-sm font-semibold text-gray-950 dark:text-white">Egg check <span class="text-xs font-normal text-gray-500 dark:text-gray-400">(admins only)</span></summary>
+                <div class="mt-2 flex flex-wrap items-center justify-between gap-3">
                     <div>
-                        <p class="text-sm font-semibold text-gray-950 dark:text-white">Egg check <span class="text-xs font-normal text-gray-500 dark:text-gray-400">(admins only)</span></p>
-                        <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Ask the AI whether this server's egg is causing the problem. It reads the egg, the install log, and recent console output, then suggests a change. Nothing changes until you review and apply it.</p>
+                        <p class="text-sm text-gray-600 dark:text-gray-400">Ask the AI whether this server's egg is causing the problem. It reads the egg, the install log, and recent console output, then suggests a change. Nothing changes until you review and apply it.</p>
                     </div>
                     <x-filament::button color="gray" wire:click="checkEgg" wire:loading.attr="disabled" wire:target="checkEgg">
                         <span wire:loading.remove wire:target="checkEgg">Ask AI to check the egg</span>
@@ -233,7 +335,7 @@
                         </div>
                     </div>
                 @endif
-            </div>
+            </details>
         @endif
     </x-filament::section>
 

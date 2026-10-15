@@ -10,6 +10,8 @@ return [
     'backup_before_reinstall' => true,
     'ask_enabled' => true,
     'ask_daily_limit' => 20,
+    'config_helper_enabled' => true,
+    'usage_tracking_enabled' => true,
     'ai_enabled' => false,
     'base_url' => '',
     'model' => '',

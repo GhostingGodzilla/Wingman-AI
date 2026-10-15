@@ -22,12 +22,16 @@ use Livewire\Attributes\On;
 use Pelican\AiHelpAssistant\Services\AskService;
 use Pelican\AiHelpAssistant\Services\AssistantSettings;
 use Pelican\AiHelpAssistant\Services\AutomaticStartupService;
+use Pelican\AiHelpAssistant\Services\BackupDoctorService;
+use Pelican\AiHelpAssistant\Services\ConfigHelperService;
+use Pelican\AiHelpAssistant\Services\DailySummaryService;
 use Pelican\AiHelpAssistant\Services\EggAdvisorService;
 use Pelican\AiHelpAssistant\Services\IncidentService;
 use Pelican\AiHelpAssistant\Services\PerformanceService;
 use Pelican\AiHelpAssistant\Services\RepairService;
 use Pelican\AiHelpAssistant\Services\SafeReinstallService;
 use Pelican\AiHelpAssistant\Services\StartupMonitorService;
+use Pelican\AiHelpAssistant\Services\UsageHistoryService;
 use Throwable;
 
 class AiHelpAssistant extends Widget implements HasActions, HasSchemas
@@ -63,6 +67,13 @@ class AiHelpAssistant extends Widget implements HasActions, HasSchemas
 
     #[Locked]
     public ?array $answer = null;
+
+    /** The "change a game setting" request; validated on the server like any browser input. */
+    public string $configRequest = '';
+
+    /** Display data for a proposed settings change; applying re-reads it by id. */
+    #[Locked]
+    public ?array $configProposal = null;
 
     public function mount(): void
     {
@@ -486,6 +497,118 @@ class AiHelpAssistant extends Widget implements HasActions, HasSchemas
             logger()->warning('Wingman AI performance check failed.', ['exception_type' => $exception::class]);
             Notification::make()->title('Performance check failed')->body('Check the Wings connection, then try again.')->danger()->send();
         }
+    }
+
+    /** Backups, what happened in the last 24 hours, and usage-based limit suggestions. */
+    protected function serverHealth(): array
+    {
+        try {
+            [$server, $user] = $this->context();
+        } catch (Throwable) {
+            return ['backups' => null, 'day' => null, 'usage' => null];
+        }
+        $section = function (callable $read): ?array {
+            try {
+                return $read();
+            } catch (Throwable) {
+                return null; // One failing section must never break the Console page.
+            }
+        };
+
+        return [
+            'backups' => $section(fn () => app(BackupDoctorService::class)->status($server, $user)),
+            'day' => $section(fn () => app(DailySummaryService::class)->summary($server, $user)),
+            'usage' => $section(fn () => (bool) (app(AssistantSettings::class)->get()['usage_tracking_enabled'] ?? true) ? app(UsageHistoryService::class)->summary($server) : null),
+        ];
+    }
+
+    public function backupNow(): void
+    {
+        [$server, $user] = $this->context();
+        $this->runTask('Backup', fn () => app(BackupDoctorService::class)->backupNow($server, $user));
+    }
+
+    public function scheduleNightlyBackups(): void
+    {
+        [$server, $user] = $this->context();
+        $this->runTask('Nightly backups', fn () => app(BackupDoctorService::class)->scheduleNightly($server, $user));
+    }
+
+    protected function canChangeSettings(): bool
+    {
+        try {
+            [$server, $user] = $this->context();
+
+            return app(ConfigHelperService::class)->available($server, $user);
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /** Ask the AI for a settings change; only stores a proposal for review. */
+    public function proposeConfig(): void
+    {
+        [$server, $user] = $this->context();
+        try {
+            $this->configProposal = app(ConfigHelperService::class)->propose($server, $user, $this->configRequest);
+        } catch (ValidationException $exception) {
+            $this->configProposal = null;
+            Notification::make()->title('No change suggested')
+                ->body(collect($exception->errors())->flatten()->first() ?? 'Wingman could not suggest a change.')
+                ->danger()->send();
+        } catch (Throwable $exception) {
+            $this->configProposal = null;
+            logger()->warning('Wingman AI settings suggestion failed.', ['exception_type' => $exception::class]);
+            Notification::make()->title('No change suggested')->body('Check the Wings connection, then try again.')->danger()->send();
+        }
+    }
+
+    public function dismissConfig(): void
+    {
+        $this->configProposal = null;
+    }
+
+    public function applyConfigAction(): Action
+    {
+        $proposal = $this->configProposal;
+
+        return Action::make('applyConfig')
+            ->label('Apply change')
+            ->visible($proposal !== null && ($proposal['id'] ?? null) !== null)
+            ->requiresConfirmation()
+            ->modalHeading('Change ' . ($proposal['file'] ?? 'this file') . '?')
+            ->modalDescription('Wingman saves the change and keeps the current file next to it as a .bak copy.' . (($proposal['restart'] ?? false) ? ' Restart the server afterwards for it to take effect.' : ''))
+            ->modalSubmitActionLabel('Apply change')
+            ->action(function (): void {
+                [$server, $user] = $this->context();
+                $applied = $this->runTask('Setting changed', fn () => app(ConfigHelperService::class)->apply($server, $user, (string) ($this->configProposal['id'] ?? '')));
+                if ($applied) {
+                    $this->configProposal = null;
+                    $this->configRequest = '';
+                }
+            });
+    }
+
+    /** Runs a user-started task and reports the result; true when it succeeded. */
+    private function runTask(string $title, callable $task): bool
+    {
+        try {
+            $message = $task();
+        } catch (ValidationException $exception) {
+            Notification::make()->title($title . ' failed')
+                ->body(collect($exception->errors())->flatten()->first() ?? 'It could not be completed.')
+                ->danger()->send();
+
+            return false;
+        } catch (Throwable $exception) {
+            logger()->warning('Wingman AI task failed.', ['task' => $title, 'exception_type' => $exception::class]);
+            Notification::make()->title($title . ' failed')->body('Check the panel logs or the Wings connection, then try again.')->danger()->send();
+
+            return false;
+        }
+        Notification::make()->title($title)->body($message)->success()->send();
+
+        return true;
     }
 
     private function runEggTask(string $title, callable $task): void
