@@ -45,6 +45,7 @@ jobs:
           php wingman-ai/tests/php/helpers_test.php
           php wingman-ai/tests/php/egg_helpers_test.php
           php wingman-ai/tests/php/incident_rules_test.php
+          php wingman-ai/tests/php/template_test.php
           php wingman-ai/tests/php/automatic_state_test.php
           php wingman-ai/tests/integration/run.php
           php wingman-ai/tests/monitor.test.php

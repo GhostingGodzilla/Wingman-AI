@@ -16,7 +16,9 @@
                     ({{ $this->automaticReportTime() }}). Your manual check is shown below.
                 </p>
             @endif
-            @php($reinstallStatus = $this->reinstallStatus())
+            @php
+                $reinstallStatus = $this->reinstallStatus();
+            @endphp
             @if ($reinstallStatus['pending'])
                 <p class="mt-2 text-sm font-semibold text-gray-950 dark:text-white">Backing up before reinstalling. The reinstall starts by itself when the backup finishes.</p>
             @elseif ($reinstallStatus['notice'])
@@ -91,7 +93,9 @@
                     </div>
                 @endif
 
-                @php($fixOffer = $this->fixOffer())
+                @php
+                    $fixOffer = $this->fixOffer();
+                @endphp
                 @if ($fixOffer)
                     <div class="rounded-lg p-3" style="border: 1px solid rgba(59, 130, 246, 0.45); background: rgba(59, 130, 246, 0.08);">
                         <p class="text-sm font-semibold text-gray-950 dark:text-white">Wingman can fix this</p>
@@ -146,7 +150,9 @@
             </div>
         @endif
 
-        @php($eggTools = $this->eggTools())
+        @php
+            $eggTools = $this->eggTools();
+        @endphp
         @if ($eggTools)
             {{-- Inline styles keep this readable even when the panel has not rebuilt its CSS for plugins. --}}
             <div style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid rgba(127, 127, 127, 0.25);" aria-label="Egg check">
