@@ -79,9 +79,9 @@ class EggAdvisorService
             $proposal = EggProposalNormalizer::normalize($raw, $current, $secrets);
         } catch (InvalidArgumentException) {
             $this->fail('The AI returned an answer Wingman could not use. Try again, or try a different model.');
-        } catch (Throwable) {
-            // Do not log request exceptions: they can contain authorization headers and logs.
-            $this->fail('The AI service did not answer in time or rejected the request. Try again later.');
+        } catch (Throwable $exception) {
+            // AiClient logs only the reason and status; request details can contain credentials and logs.
+            $this->fail(AiServiceException::describe($exception));
         }
 
         $id = (string) Str::uuid();

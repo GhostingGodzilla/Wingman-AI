@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 use Pelican\AiHelpAssistant\Services\AiClient;
+use Pelican\AiHelpAssistant\Services\AiServiceException;
 use Pelican\AiHelpAssistant\Services\AssistantSettings;
 use Pelican\AiHelpAssistant\Services\DiagnosisService;
 
@@ -216,12 +217,15 @@ $tests['malformed and failed AI responses fall back without exposing provider er
     foreach (['not JSON', '{"summary":"Incomplete report"}', '["not a report"]'] as $raw) {
         $client->answer = $raw;
         $report = $service->diagnose($server, $user, capture());
-        expect($report['source'] === 'rules' && str_contains($report['notice'], 'invalid answer'), 'Malformed response did not fall back.');
+        expect($report['source'] === 'rules' && str_contains($report['notice'], 'answer Wingman could not use. Basic error checks are shown instead.'), 'Malformed response did not fall back.');
     }
     $client->failure = new RuntimeException('Provider response includes provider-private-key-778899');
     $report = $service->diagnose($server, $user, capture());
     expect($report['source'] === 'rules', 'Provider exception did not fall back.');
     expect(!str_contains(json_encode($report), 'provider-private-key-778899'), 'Provider exception leaked its details.');
+    $client->failure = AiServiceException::fromResponse(429, 'provider-private-key-778899');
+    $report = $service->diagnose($server, $user, capture());
+    expect($report['notice'] === 'No AI explanation: The AI service\'s request limit or free daily quota is used up (HTTP 429). Wait a while and try again, or check your plan. Basic error checks are shown instead.', 'The report must say why there is no AI explanation.');
 };
 
 $tests['disabled AI or missing connection uses basic checks without a provider request'] = static function (): void {
@@ -289,11 +293,12 @@ $tests['endpoint settings permit local AI and reject credentials query fragments
     expectThrows(fn () => (new AssistantSettings())->save(settingsForm(['ai_enabled' => true])), ValidationException::class);
 };
 
-function httpResponse(bool $successful, string $body, mixed $content): object
+function httpResponse(bool $successful, string $body, mixed $content, int $status = 0): object
 {
-    return new class($successful, $body, $content) {
-        public function __construct(private bool $ok, private string $bodyValue, private mixed $content) {}
+    return new class($successful, $body, $content, $status ?: ($successful ? 200 : 500)) {
+        public function __construct(private bool $ok, private string $bodyValue, private mixed $content, private int $code) {}
         public function successful(): bool { return $this->ok; }
+        public function status(): int { return $this->code; }
         public function body(): string { return $this->bodyValue; }
         public function json(string $key): mixed { return $key === 'choices.0.message.content' ? $this->content : null; }
     };
@@ -324,14 +329,37 @@ $tests['AI transport uses configured provider authentication token parameter and
     expect(isset(Http::$calls[array_search('post', $methods, true)][2]['max_completion_tokens']), 'OpenAI output token parameter ignored.');
 };
 
-$tests['AI transport rejects HTTP failures missing content and excessive response bodies generically'] = static function (): void {
+$tests['AI transport explains failures by reason without exposing provider bodies'] = static function (): void {
     $settings = (new MemorySettings(['base_url' => 'https://ai.example.test/v1', 'model' => 'test']))->get();
     $client = new AiClient();
-    foreach ([httpResponse(false, 'provider-secret-body', 'echoed secret'), httpResponse(true, '{}', null), httpResponse(true, '{}', ''), httpResponse(true, str_repeat('x', 1024 * 1024 + 1), 'answer')] as $response) {
+    $GLOBALS['integration_logs'] = [];
+    foreach ([
+        [httpResponse(false, 'provider-secret-body', null, 401), 'key', 'rejected the API key (HTTP 401)'],
+        [httpResponse(false, '{"error":{"message":"API key not valid. provider-secret-body","status":"INVALID_ARGUMENT"}}', null, 400), 'key', 'rejected the API key (HTTP 400)'],
+        [httpResponse(false, '{"error":"Unsupported parameter: max_tokens provider-secret-body"}', null, 400), 'token_setting', 'output token setting'],
+        [httpResponse(false, 'provider-secret-body', null, 404), 'model', 'model name (HTTP 404)'],
+        [httpResponse(false, 'provider-secret-body RESOURCE_EXHAUSTED', null, 429), 'limit', 'free daily quota is used up (HTTP 429)'],
+        [httpResponse(false, 'provider-secret-body', null, 503), 'service', 'problem on its side (HTTP 503)'],
+        [httpResponse(false, 'provider-secret-body', null, 422), 'rejected', 'rejected the request (HTTP 422)'],
+        [httpResponse(true, '{}', null), 'empty', 'empty answer'],
+        [httpResponse(true, '{}', ''), 'empty', 'Maximum AI output tokens'],
+        [httpResponse(true, str_repeat('x', 1024 * 1024 + 1), 'answer'), 'too_large', 'too large'],
+    ] as [$response, $reason, $message]) {
         Http::$response = $response;
-        $error = expectThrows(fn () => $client->analyze($settings, []), RuntimeException::class);
+        Http::$failure = null;
+        $error = expectThrows(fn () => $client->analyze($settings, []), AiServiceException::class);
+        expect($error->reason === $reason && str_contains($error->getMessage(), $message), 'Wrong reason for ' . $reason . ': ' . $error->getMessage());
         expect(!str_contains($error->getMessage(), 'provider-secret-body'), 'Raw provider body was exposed.');
     }
+    foreach ([['cURL error 28: Operation timed out after 45001 milliseconds', 'timeout'], ['cURL error 6: Could not resolve host', 'connection']] as [$failure, $reason]) {
+        Http::$failure = new RuntimeException($failure);
+        $error = expectThrows(fn () => $client->analyze($settings, []), AiServiceException::class);
+        expect($error->reason === $reason, 'Wrong reason for a connection failure: ' . $error->reason);
+    }
+    Http::$failure = null;
+    expect(count($GLOBALS['integration_logs']) === 12 && $GLOBALS['integration_logs'][0][1] === ['reason' => 'key', 'status' => 401], 'Each failure must be logged with its reason and status only.');
+    expect(!str_contains(json_encode($GLOBALS['integration_logs']), 'provider-secret-body'), 'The log must not contain provider bodies.');
+    expect(AiServiceException::describe(new RuntimeException('connection reset')) === (new AiServiceException('connection'))->getMessage(), 'Unknown failures must read as connection problems.');
 };
 
 

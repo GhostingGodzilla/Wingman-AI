@@ -94,9 +94,9 @@ class DiagnosisService
             }
 
             return $report;
-        } catch (Throwable) {
-            // Do not log request exceptions: they can contain authorization headers and console output.
-            $fallback['notice'] = 'The AI service was unavailable or returned an invalid answer. Basic error checks are shown instead.';
+        } catch (Throwable $exception) {
+            // AiClient logs only the reason and status; request details can contain credentials and console output.
+            $fallback['notice'] = ($exception instanceof AiServiceException ? 'No AI explanation: ' . $exception->getMessage() : 'The AI service returned an answer Wingman could not use.') . ' Basic error checks are shown instead.';
 
             return $fallback;
         }

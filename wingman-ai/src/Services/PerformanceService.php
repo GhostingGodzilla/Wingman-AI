@@ -74,8 +74,8 @@ class PerformanceService
                 'basic_checks' => $report,
             ], self::instructions());
             $explained = ReportNormalizer::normalize($raw, [], $secrets);
-        } catch (Throwable) {
-            $report['notice'] = 'The AI service was unavailable or returned an invalid answer. Basic checks are shown instead.';
+        } catch (Throwable $exception) {
+            $report['notice'] = ($exception instanceof AiServiceException ? 'No AI explanation: ' . $exception->getMessage() : 'The AI service returned an answer Wingman could not use.') . ' Basic checks are shown instead.';
 
             return $report;
         }

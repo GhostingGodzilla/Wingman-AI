@@ -135,6 +135,7 @@ namespace {
     function app(string $class): object { return $GLOBALS['bindings'][$class]; }
     function now(): object { return new class { public function addMinutes(int $minutes): int { return $minutes; } }; }
 
+    require __DIR__ . '/../src/Services/AiServiceException.php';
     foreach (['Support/SecretRedactor', 'Support/ScriptDiff', 'Support/ConfigEdits', 'Services/ConfigHelperService'] as $file) {
         require __DIR__ . '/../src/' . $file . '.php';
     }

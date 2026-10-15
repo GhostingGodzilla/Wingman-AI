@@ -59,9 +59,9 @@ class AskService
 
         try {
             $answer = $this->client->analyze($settings, ['question' => SecretRedactor::redact($question, $secrets), 'server' => $context], self::instructions(), min(4000, max(1000, (int) ($settings['max_response_tokens'] ?? 3000))));
-        } catch (Throwable) {
-            // Do not log request exceptions: they can contain authorization headers and logs.
-            $this->fail('Wingman could not get an answer right now. Try again later.');
+        } catch (Throwable $exception) {
+            // AiClient logs only the reason and status; request details can contain credentials and logs.
+            $this->fail('Wingman could not get an answer. ' . AiServiceException::describe($exception));
         }
         $answer = trim(SecretRedactor::redact($answer, $secrets));
         // Plain text only: drop Markdown the model may add anyway.

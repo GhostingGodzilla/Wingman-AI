@@ -3,7 +3,7 @@
 namespace Pelican\AiHelpAssistant\Services;
 
 use Illuminate\Support\Facades\Http;
-use RuntimeException;
+use Throwable;
 
 class AiClient
 {
@@ -22,30 +22,42 @@ class AiClient
         }
 
         $tokenParameter = $settings['token_parameter'] === 'max_tokens' ? 'max_tokens' : 'max_completion_tokens';
-        $response = $request->post(rtrim($settings['base_url'], '/') . '/chat/completions', [
-            'model' => $settings['model'],
-            'stream' => false,
-            $tokenParameter => $maxTokens ?? (int) $settings['max_response_tokens'],
-            'messages' => [
-                ['role' => 'system', 'content' => $instructions ?? $this->instructions()],
-                ['role' => 'user', 'content' => json_encode($input, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE)],
-            ],
-        ]);
+        try {
+            $response = $request->post(rtrim($settings['base_url'], '/') . '/chat/completions', [
+                'model' => $settings['model'],
+                'stream' => false,
+                $tokenParameter => $maxTokens ?? (int) $settings['max_response_tokens'],
+                'messages' => [
+                    ['role' => 'system', 'content' => $instructions ?? $this->instructions()],
+                    ['role' => 'user', 'content' => json_encode($input, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE)],
+                ],
+            ]);
+        } catch (Throwable $exception) {
+            $this->failed(AiServiceException::fromThrowable($exception));
+        }
 
         // Never expose provider response bodies: they may echo console text or credentials.
         if (!$response->successful()) {
-            throw new RuntimeException('The AI service could not complete the diagnosis.');
+            $this->failed(AiServiceException::fromResponse((int) $response->status(), (string) $response->body()));
         }
         if (strlen($response->body()) > 1024 * 1024) {
-            throw new RuntimeException('The AI response was too large.');
+            $this->failed(new AiServiceException('too_large'));
         }
 
         $content = $response->json('choices.0.message.content');
         if (!is_string($content) || trim($content) === '') {
-            throw new RuntimeException('The AI service returned no diagnosis.');
+            $this->failed(new AiServiceException('empty'));
         }
 
         return $content;
+    }
+
+    /** Logs only the reason and status, so an admin can see why AI answers are missing. */
+    private function failed(AiServiceException $exception): never
+    {
+        logger()->warning('Wingman AI request failed.', ['reason' => $exception->reason, 'status' => $exception->status]);
+
+        throw $exception;
     }
 
     private function instructions(): string

@@ -224,4 +224,16 @@ namespace {
     {
         return '/private-integration-test/' . $path;
     }
+
+    if (!function_exists('logger')) {
+        function logger(): object
+        {
+            return new class {
+                public function warning(string $message, array $context = []): void
+                {
+                    $GLOBALS['integration_logs'][] = [$message, $context];
+                }
+            };
+        }
+    }
 }

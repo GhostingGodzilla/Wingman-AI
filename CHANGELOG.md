@@ -6,6 +6,16 @@ This is the update log for Wingman AI. Each release explains what changed and an
 
 <!-- Add new user-facing changes here before the next release. -->
 
+## [0.7.1] - 2026-10-15
+
+### Clearer AI errors
+
+- When an AI request fails, Wingman now says why instead of "did not answer in time or rejected the request": the API key was rejected, the model name is unknown, the output token setting is not accepted, the request limit or free daily quota is used up, the AI service had a problem, it took too long, or the panel could not connect. Each message says what to change.
+- Reports that fall back to built-in checks now say why there is no AI explanation.
+- The panel log records each failed AI request with its reason and HTTP status (never the AI service's reply), so an admin can see why AI answers are missing.
+
+Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/8.5**.
+
 ## [0.7.0] - 2026-10-15
 
 ### Server health
@@ -148,7 +158,7 @@ Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/
 - Added basic error checks and optional hosted or local AI explanations with evidence and suggested fix steps.
 - Added server permissions, credential redaction, and encrypted AI connection settings.
 
-[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.7.1...HEAD
 [0.3.0]: https://github.com/GhostingGodzilla/Wingman-AI/releases/tag/v0.3.0
 [0.2.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/7c9182ffed703a36d182ab188ac2c58d494aa73e
 [0.1.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/8d759582f80dfd0029a5458f93898c25cb860122

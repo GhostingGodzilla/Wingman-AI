@@ -115,6 +115,7 @@ namespace {
     function app(string $class): object { return $GLOBALS['bindings'][$class]; }
     function now(): object { return new class { public function addDay(): int { return 86400; } }; }
 
+    require __DIR__ . '/../src/Services/AiServiceException.php';
     foreach (['Support/SecretRedactor', 'Support/ReportNormalizer', 'Support/PerformanceRules', 'Services/AskService', 'Services/PerformanceService'] as $file) {
         require __DIR__ . '/../src/' . $file . '.php';
     }

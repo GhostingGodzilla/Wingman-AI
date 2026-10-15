@@ -270,6 +270,7 @@ namespace {
     foreach (['SecretRedactor', 'ScriptDiff', 'EggProposalNormalizer'] as $support) {
         require __DIR__ . '/../src/Support/' . $support . '.php';
     }
+    require __DIR__ . '/../src/Services/AiServiceException.php';
     require __DIR__ . '/../src/Services/EggAdvisorService.php';
 
     function check(bool $condition, string $message): void { if (!$condition) throw new RuntimeException($message); }
@@ -473,18 +474,20 @@ namespace {
 
     $runTest('AI failures, unusable answers, and missing logs fail safely', function () {
         [$advisor, $server, $user, $client] = harness();
-        $client->answer = new RuntimeException('HTTP 500 with secret body');
+        $client->answer = new \Pelican\AiHelpAssistant\Services\AiServiceException('timeout');
         rejects(fn () => $advisor->propose($server, $user), 'did not answer in time');
+        $client->answer = \Pelican\AiHelpAssistant\Services\AiServiceException::fromResponse(429, 'secret body');
+        rejects(fn () => $advisor->propose($server, $user), 'free daily quota is used up (HTTP 429)');
         $client->answer = 'I think you should reinstall';
         rejects(fn () => $advisor->propose($server, $user), 'could not use');
         check(Cache::$data === [], 'A failed review stored a proposal.');
         $client->answer = json_encode(['summary' => 'No egg problem.', 'changes' => []]);
         app(DaemonServerRepository::class)->installLog = new RuntimeException('Wings offline');
         $advisor->propose($server, $user);
-        check(str_contains($client->calls[2]['input']['install_log'], 'could not be retrieved'), 'A missing install log must be reported to the AI, not fabricated.');
-        $advisor->propose($server, $user);
+        check(str_contains(end($client->calls)['input']['install_log'], 'could not be retrieved'), 'A missing install log must be reported to the AI, not fabricated.');
         $advisor->propose($server, $user);
         rejects(fn () => $advisor->propose($server, $user), 'Please wait');
+        check(count($client->calls) === 5, 'The sixth request in an hour must not reach the AI.');
     });
 
     echo "$count egg advisor contract tests passed.\n";
