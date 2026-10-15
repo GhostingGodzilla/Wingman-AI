@@ -80,7 +80,7 @@
 
                 @php($fixOffer = $this->fixOffer())
                 @if ($fixOffer)
-                    <div class="rounded-lg border border-primary-300 bg-primary-50 p-3 dark:border-primary-700 dark:bg-primary-950/40">
+                    <div class="rounded-lg p-3" style="border: 1px solid rgba(59, 130, 246, 0.45); background: rgba(59, 130, 246, 0.08);">
                         <p class="text-sm font-semibold text-gray-950 dark:text-white">Wingman can fix this</p>
                         <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">{{ $this->fixSummary($fixOffer) }} You will be asked to confirm first.</p>
                         <div class="mt-3">{{ $this->applyFixAction }}</div>
@@ -106,6 +106,90 @@
                                 <li class="whitespace-pre-wrap">{{ $item }}</li>
                             @endforeach
                         </ul>
+                    </div>
+                @endif
+            </div>
+        @endif
+
+        @php($eggTools = $this->eggTools())
+        @if ($eggTools)
+            {{-- Inline styles keep this readable even when the panel has not rebuilt its CSS for plugins. --}}
+            <div style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid rgba(127, 127, 127, 0.25);" aria-label="Egg check">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <p class="text-sm font-semibold text-gray-950 dark:text-white">Egg check <span class="text-xs font-normal text-gray-500 dark:text-gray-400">(admins only)</span></p>
+                        <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Ask the AI whether this server's egg is causing the problem. It reads the egg, the install log, and recent console output, then suggests a change. Nothing changes until you review and apply it.</p>
+                    </div>
+                    <x-filament::button color="gray" wire:click="checkEgg" wire:loading.attr="disabled" wire:target="checkEgg">
+                        <span wire:loading.remove wire:target="checkEgg">Ask AI to check the egg</span>
+                        <span wire:loading wire:target="checkEgg">Checking… this can take up to a minute</span>
+                    </x-filament::button>
+                </div>
+
+                @if ($eggTools['last_change'])
+                    <div class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gray-50 p-3 text-sm text-gray-700 dark:bg-gray-900 dark:text-gray-300">
+                        <span>
+                            Wingman changed this egg on <time datetime="{{ $eggTools['last_change']['applied_at'] }}">{{ \Illuminate\Support\Carbon::parse($eggTools['last_change']['applied_at'])->format('M j, Y H:i') }} UTC</time>
+                            ({{ implode(', ', array_map(fn ($field) => str_replace('_', ' ', $field), $eggTools['last_change']['fields'])) }}).
+                            @unless ($eggTools['last_change']['undoable'])
+                                It was edited again since, so it cannot be undone automatically.
+                            @endunless
+                        </span>
+                        @if ($eggTools['last_change']['undoable'])
+                            {{ $this->undoEggFixAction }}
+                        @endif
+                    </div>
+                @endif
+
+                @if ($eggProposal)
+                    <div class="mt-3 rounded-lg p-3" style="border: 1px solid rgba(127, 127, 127, 0.3);">
+                        <p class="text-sm font-semibold text-gray-950 dark:text-white">{{ $eggProposal['summary'] }}</p>
+                        @if ($eggProposal['reason'] !== '')
+                            <p class="mt-1 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{{ $eggProposal['reason'] }}</p>
+                        @endif
+
+                        @if ($eggProposal['changes'] === [])
+                            <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">The AI did not find a problem in the egg, so there is nothing to apply.</p>
+                        @else
+                            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                Suggested by AI; review every change before applying. The "{{ $eggProposal['egg_name'] }}" egg is used by {{ $eggProposal['servers_using'] }} {{ $eggProposal['servers_using'] === 1 ? 'server' : 'servers' }}.
+                                @if ($eggProposal['copies_script'])
+                                    This egg currently uses another egg's install script; applying gives it its own copy.
+                                @endif
+                            </p>
+
+                            @if ($eggProposal['warnings'] !== [])
+                                <div class="mt-2 rounded-lg p-3 text-sm" style="border: 1px solid rgba(245, 158, 11, 0.55); background: rgba(245, 158, 11, 0.1);" role="alert">
+                                    <p class="font-semibold">Check these carefully before applying:</p>
+                                    @foreach ($eggProposal['warnings'] as $warning)
+                                        <p class="mt-1">&bull; {{ $warning }}</p>
+                                    @endforeach
+                                </div>
+                            @endif
+
+                            @foreach ($eggProposal['changes'] as $change)
+                                <div class="mt-3">
+                                    <p class="text-sm font-semibold text-gray-950 dark:text-white">{{ $change['label'] }}</p>
+                                    @if (isset($change['diff']))
+                                        <div class="mt-1 overflow-auto rounded-lg font-mono text-xs" style="max-height: 24rem; border: 1px solid rgba(127, 127, 127, 0.3);">
+                                            @foreach ($change['diff'] as [$type, $line])
+                                                <div style="white-space: pre-wrap; word-break: break-all; padding: 0 0.5rem; {{ $type === '+' ? 'background: rgba(34, 197, 94, 0.18);' : ($type === '-' ? 'background: rgba(239, 68, 68, 0.18);' : ($type === '…' ? 'opacity: 0.6; font-style: italic;' : '')) }}">{{ $type === '…' ? '… ' : $type . ' ' }}{{ $line }}</div>
+                                            @endforeach
+                                        </div>
+                                    @else
+                                        <div class="mt-1 font-mono text-xs" style="white-space: pre-wrap; word-break: break-all;">
+                                            <div style="padding: 0.25rem 0.5rem; background: rgba(239, 68, 68, 0.18);">- {{ $change['before'] }}</div>
+                                            <div style="padding: 0.25rem 0.5rem; background: rgba(34, 197, 94, 0.18);">+ {{ $change['after'] }}</div>
+                                        </div>
+                                    @endif
+                                </div>
+                            @endforeach
+                        @endif
+
+                        <div class="mt-3 flex flex-wrap items-center gap-3">
+                            {{ $this->applyEggFixAction }}
+                            <x-filament::button color="gray" wire:click="dismissEggProposal">Dismiss</x-filament::button>
+                        </div>
                     </div>
                 @endif
             </div>

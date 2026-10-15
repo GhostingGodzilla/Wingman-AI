@@ -6,7 +6,26 @@ namespace Pelican\AiHelpAssistant\Support;
 
 final class SecretRedactor
 {
-    private const MASK = '[REDACTED]';
+    public const MASK = '[REDACTED]';
+
+    /**
+     * Whether an egg variable's value should be masked as a known secret. Masking a tiny
+     * or ordinary value (like "1", "win64", a port, or a path) would garble every log line
+     * that contains it, so hidden settings are masked only when they look like credentials.
+     */
+    public static function isVariableSecret(string $name, string $value, bool $viewable): bool
+    {
+        $value = trim($value);
+        if (strlen($value) < 4) {
+            return false;
+        }
+        if (preg_match('/pass(?:word)?|token|secret|key|licen[cs]e|auth|credential|private/i', $name) === 1) {
+            return true;
+        }
+
+        return !$viewable && strlen($value) >= 8 && !str_starts_with($value, '/')
+            && preg_match('/^[\d.:,\/\s_-]+$/', $value) !== 1;
+    }
 
     public static function redact(string $text, array $knownSecrets = []): string
     {

@@ -34,6 +34,21 @@ For three well-understood problems, the report offers a fix button. Nothing chan
 
 Fixes are chosen only by Wingman's built-in error checks, never by the AI model. Permissions are checked again when you click. The restart after a fix also needs `control.restart`; without it, you are told to start the server yourself. An administrator's custom Docker image is never replaced. Each fix is recorded in the server's activity log, and a user can apply at most three fixes per server every five minutes. The automatic watcher never applies a fix by itself.
 
+### AI egg check (admins)
+
+Sometimes the server is fine and the **egg** (the template that installs and starts it) is wrong. Examples: a misspelled program name in the startup command, or an install script that keeps going after a failed download. Panel admins see an **Egg check** section in the Wingman box with an **Ask AI to check the egg** button. The AI reads the egg, the server's last install log, and recent console output, then either explains why the egg is not the problem or suggests a specific change.
+
+Nothing changes until you review the suggestion and click **Apply to egg**:
+
+- Every change is shown before and after; install-script changes are shown line by line. Risky additions are called out in a warning box: new download addresses, piping downloads into a shell, deleting files outside the server folder, `chmod 777`, base64, `eval`, raw network connections, and new Docker images.
+- The suggestion can change the startup command, the Docker image list, variable defaults, the install script, and the install container. This server's own startup command, image, and variables follow the egg only where they still used the egg's old values.
+- The confirmation shows how many servers use the egg. Install-script changes apply to each of them the next time it is installed or reinstalled. You can choose to reinstall this server right away.
+- Wingman saves the egg's previous version first (in `storage/app/private/wingman-ai/egg-backups/`, the last five changes per egg). **Undo** restores it, unless someone edited the egg again since; the backup file stays available for manual restore.
+- Applying requires the admin permissions to edit both the egg and the server (`update egg`, `update server`). The AI never writes anything itself, and the automatic watcher never asks for egg changes.
+- Suggestions expire after 30 minutes, are bound to the admin who asked, and are refused if the egg changed in the meantime. Each admin can ask at most five times per server per hour.
+
+Console output can contain text typed by players. The AI is told to treat everything it reads as untrusted, but a suggestion could still be influenced by such text, so always read the change before applying it. Egg checks need an AI connection; they send the egg's install script and install log to your AI provider, with passwords and keys masked.
+
 ## Install
 
 You need administrator access to the Pelican **panel**, not only access to a game server's files.
@@ -84,7 +99,7 @@ AI requests use the Chat Completions format for compatibility with hosted and lo
 - Clicking **Start & Diagnose** authorizes a normal server start. Opening the Console page only retrieves the automatic status/report; it does not start a server. Cancelling a manual capture does not stop the server or disable automatic protection.
 - Automatic reports and existing-log checks are collected through panel-to-Wings requests. Manual live console captures use your browser's Wings connection, so closing the page ends a manual live capture. The browser does not receive the AI API key.
 - A diagnosis sent to AI includes bounded recent output, resource limits, the egg name, and permitted startup/runtime information. Console output can contain player chat, filenames, and other private content. Only enable AI with a provider you trust.
-- Credential patterns and hidden or credential-named egg variable values are redacted before AI submission. This is best effort, not a guarantee for arbitrary text. Only a small allowlist of viewable runtime selectors is included as separate context. No whole configuration files, worlds, or directories are uploaded.
+- Credential patterns, credential-named egg variable values (password, token, key, secret, and similar), and hidden values that look like credentials are redacted before AI submission. Ordinary hidden settings such as `1`, port numbers, and paths stay readable, so they do not garble the log. This is best effort, not a guarantee for arbitrary text. Only a small allowlist of viewable runtime selectors is included as separate context. No whole configuration files, worlds, or directories are uploaded.
 - Settings, including the API key, are encrypted using the panel's `APP_KEY` and stored in `storage/app/private/wingman-ai/settings.enc`. They survive plugin updates. Back up the panel's key and private storage together. The settings form leaves the saved key blank; leaving it blank preserves it.
 - Manual capture sessions are bound to the authenticated user and server, expire, and cannot be replayed for additional diagnoses. A configurable per-user limit bounds manual requests over a 24-hour window. Automatic reports have separate per-server limits and a cooldown. These are not monetary spending caps; set a budget with your provider too.
 - The latest automatic report is encrypted in the panel cache for up to 24 hours and may disappear sooner if the cache is cleared. It is not a historical archive. Manual reports stay in the current page's Livewire state. Raw console logs are not stored in a plugin history database.

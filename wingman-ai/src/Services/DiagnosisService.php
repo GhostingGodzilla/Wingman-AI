@@ -36,7 +36,7 @@ class DiagnosisService
                 && preg_match('/^(SERVER_JARFILE|JAR_FILE|JAVA_VERSION|MINECRAFT_VERSION|MC_VERSION|SERVER_VERSION|NODE_VERSION|PYTHON_VERSION|STEAM_APP_ID|SRCDS_APPID)$/D', $name)
                 && strlen($value) <= 200 && preg_match('/^[a-zA-Z0-9._+\/-]*$/D', $value)) {
                 $safeVariables[$name] = $value;
-            } elseif ($value !== '' && (!$variable->user_viewable || preg_match('/pass(?:word)?|token|secret|key|licen[cs]e|auth|credential|private/i', $name))) {
+            } elseif (SecretRedactor::isVariableSecret($name, $value, (bool) $variable->user_viewable)) {
                 $secrets[] = $value;
             }
         }

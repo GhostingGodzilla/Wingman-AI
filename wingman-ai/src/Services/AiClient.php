@@ -7,11 +7,15 @@ use RuntimeException;
 
 class AiClient
 {
-    public function analyze(array $settings, array $input): string
+    /**
+     * @param  ?string  $instructions  System prompt; defaults to the startup diagnosis prompt.
+     * @param  ?int  $maxTokens  Output token budget; defaults to the configured setting.
+     */
+    public function analyze(array $settings, array $input, ?string $instructions = null, ?int $maxTokens = null, int $timeout = 45): string
     {
         AssistantSettings::validateBaseUrl($settings['base_url']);
 
-        $request = Http::acceptJson()->asJson()->connectTimeout(5)->timeout(45)
+        $request = Http::acceptJson()->asJson()->connectTimeout(5)->timeout($timeout)
             ->withOptions(['allow_redirects' => false]);
         if ($settings['api_key'] !== '') {
             $request = $request->withToken($settings['api_key']);
@@ -21,9 +25,9 @@ class AiClient
         $response = $request->post(rtrim($settings['base_url'], '/') . '/chat/completions', [
             'model' => $settings['model'],
             'stream' => false,
-            $tokenParameter => (int) $settings['max_response_tokens'],
+            $tokenParameter => $maxTokens ?? (int) $settings['max_response_tokens'],
             'messages' => [
-                ['role' => 'system', 'content' => $this->instructions()],
+                ['role' => 'system', 'content' => $instructions ?? $this->instructions()],
                 ['role' => 'user', 'content' => json_encode($input, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE)],
             ],
         ]);

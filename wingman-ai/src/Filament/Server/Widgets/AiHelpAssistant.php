@@ -10,6 +10,7 @@ use Filament\Actions\Concerns\InteractsWithActions;
 use Filament\Actions\Contracts\HasActions;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Concerns\InteractsWithSchemas;
 use Filament\Schemas\Contracts\HasSchemas;
@@ -20,6 +21,7 @@ use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
 use Pelican\AiHelpAssistant\Services\AssistantSettings;
 use Pelican\AiHelpAssistant\Services\AutomaticStartupService;
+use Pelican\AiHelpAssistant\Services\EggAdvisorService;
 use Pelican\AiHelpAssistant\Services\RepairService;
 use Pelican\AiHelpAssistant\Services\StartupMonitorService;
 use Throwable;
@@ -47,6 +49,10 @@ class AiHelpAssistant extends Widget implements HasActions, HasSchemas
     /** Hides the fix button for a report after its repair was applied on this page. */
     #[Locked]
     public ?string $appliedFix = null;
+
+    /** Display data for an AI egg suggestion; applying re-reads the stored proposal by id. */
+    #[Locked]
+    public ?array $eggProposal = null;
 
     public function mount(): void
     {
@@ -293,6 +299,107 @@ class AiHelpAssistant extends Widget implements HasActions, HasSchemas
                 Notification::make()->title('Fix applied')->body($message)->success()->send();
                 $this->refreshAutomaticDiagnosis();
             });
+    }
+
+    /** Admin egg tools, or null when this user cannot use them. */
+    protected function eggTools(): ?array
+    {
+        try {
+            [$server, $user] = $this->context();
+            $advisor = app(EggAdvisorService::class);
+            if (!$advisor->available($server, $user)) {
+                return null;
+            }
+
+            return ['last_change' => $advisor->lastChange($server, $user)];
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /** Asks the AI to review this server's egg; only an admin can, and nothing is changed. */
+    public function checkEgg(): void
+    {
+        [$server, $user] = $this->context();
+        try {
+            $this->eggProposal = app(EggAdvisorService::class)->propose($server, $user);
+        } catch (ValidationException $exception) {
+            $this->eggProposal = null;
+            Notification::make()->title('Egg check failed')
+                ->body(collect($exception->errors())->flatten()->first() ?? 'The egg could not be checked.')
+                ->danger()->send();
+        } catch (Throwable $exception) {
+            $this->eggProposal = null;
+            logger()->warning('Wingman AI egg check failed.', ['exception_type' => $exception::class]);
+            Notification::make()->title('Egg check failed')->body('Check the panel logs, then try again.')->danger()->send();
+        }
+    }
+
+    public function dismissEggProposal(): void
+    {
+        $this->eggProposal = null;
+    }
+
+    public function applyEggFixAction(): Action
+    {
+        $proposal = $this->eggProposal;
+        $count = (int) ($proposal['servers_using'] ?? 0);
+
+        return Action::make('applyEggFix')
+            ->label('Apply to egg')
+            ->color('danger')
+            ->visible($proposal !== null && ($proposal['changes'] ?? []) !== [])
+            ->requiresConfirmation()
+            ->modalHeading('Change the "' . ($proposal['egg_name'] ?? 'egg') . '" egg?')
+            ->modalDescription('This egg is used by ' . $count . ' ' . ($count === 1 ? 'server' : 'servers')
+                . '. Install-script changes apply to each of them the next time it is installed or reinstalled. Wingman saves the current egg first so you can undo this.')
+            ->modalSubmitActionLabel('Apply change')
+            ->schema([
+                Toggle::make('reinstall')->label('Reinstall this server afterwards')
+                    ->helperText('Runs the updated install script. Some files may be deleted or overwritten, so back up first.')
+                    ->default((bool) ($proposal['reinstall'] ?? false)),
+            ])
+            ->action(function (array $data): void {
+                [$server, $user] = $this->context();
+                $this->runEggTask('Egg updated', fn () => app(EggAdvisorService::class)->apply($server, $user, (string) ($this->eggProposal['id'] ?? ''), (bool) ($data['reinstall'] ?? false)));
+            });
+    }
+
+    public function undoEggFixAction(): Action
+    {
+        return Action::make('undoEggFix')
+            ->label('Undo')
+            ->color('gray')
+            ->size('sm')
+            ->requiresConfirmation()
+            ->modalHeading('Undo Wingman\'s egg change?')
+            ->modalDescription('Restores the egg to how it was before Wingman changed it. This server\'s startup, image, and variables are restored only where they still have the values Wingman set.')
+            ->modalSubmitActionLabel('Undo change')
+            ->action(function (): void {
+                [$server, $user] = $this->context();
+                $this->runEggTask('Egg restored', fn () => app(EggAdvisorService::class)->undo($server, $user));
+            });
+    }
+
+    private function runEggTask(string $title, callable $task): void
+    {
+        try {
+            $message = $task();
+        } catch (ValidationException $exception) {
+            Notification::make()->title('Egg not changed')
+                ->body(collect($exception->errors())->flatten()->first() ?? 'The egg could not be changed.')
+                ->danger()->send();
+
+            return;
+        } catch (Throwable $exception) {
+            logger()->warning('Wingman AI egg change failed.', ['exception_type' => $exception::class]);
+            Notification::make()->title('Egg change failed')->body('Check the panel logs, then try again.')->danger()->send();
+
+            return;
+        }
+
+        $this->eggProposal = null;
+        Notification::make()->title($title)->body($message)->success()->send();
     }
 
     private function fixFingerprint(?array $report): string

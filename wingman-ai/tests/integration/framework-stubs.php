@@ -92,9 +92,19 @@ namespace App\Models {
 namespace Illuminate\Validation {
     class ValidationException extends \RuntimeException
     {
+        public array $messages = [];
+
         public static function withMessages(array $messages): self
         {
-            return new self((string) reset($messages));
+            $exception = new self((string) reset($messages));
+            $exception->messages = $messages;
+
+            return $exception;
+        }
+
+        public function errors(): array
+        {
+            return $this->messages;
         }
     }
 }

@@ -36,7 +36,65 @@ namespace Livewire\Attributes {
     }
 }
 
+namespace Filament\Notifications {
+    class Notification
+    {
+        public static array $sent = [];
+        private array $data = [];
+        public static function make(): self { return new self(); }
+        public function title(string $title): self { $this->data['title'] = $title; return $this; }
+        public function body(string $body): self { $this->data['body'] = $body; return $this; }
+        public function danger(): self { $this->data['status'] = 'danger'; return $this; }
+        public function success(): self { $this->data['status'] = 'success'; return $this; }
+        public function send(): void { self::$sent[] = $this->data; }
+    }
+}
+
 namespace Pelican\AiHelpAssistant\Services {
+    class EggAdvisorService
+    {
+        public array $calls = [];
+        public bool $available = false;
+        public ?array $lastChange = null;
+        public ?\Throwable $failure = null;
+
+        public function available(\App\Models\Server $server, \App\Models\User $user): bool
+        {
+            $this->calls[] = 'available';
+
+            return $this->available;
+        }
+
+        public function lastChange(\App\Models\Server $server, \App\Models\User $user): ?array
+        {
+            $this->calls[] = 'lastChange';
+
+            return $this->lastChange;
+        }
+
+        public function propose(\App\Models\Server $server, \App\Models\User $user): array
+        {
+            $this->calls[] = 'propose';
+            if ($this->failure !== null) { throw $this->failure; }
+
+            return ['id' => 'proposal-1', 'summary' => 'Retry SteamCMD', 'reason' => '', 'changes' => [['label' => 'Install script', 'diff' => []]], 'warnings' => [], 'reinstall' => true, 'egg_name' => 'Risk of Rain 2', 'servers_using' => 1, 'copies_script' => false];
+        }
+
+        public function apply(\App\Models\Server $server, \App\Models\User $user, string $id, bool $reinstall): string
+        {
+            $this->calls[] = 'apply';
+
+            return 'applied';
+        }
+
+        public function undo(\App\Models\Server $server, \App\Models\User $user): string
+        {
+            $this->calls[] = 'undo';
+
+            return 'undone';
+        }
+    }
+
     class AssistantSettings
     {
         public array $settings = ['enabled' => true];
@@ -124,7 +182,9 @@ namespace {
     use Livewire\Attributes\Locked;
     use Pelican\AiHelpAssistant\Filament\Server\Widgets\AiHelpAssistant;
     use Pelican\AiHelpAssistant\Services\AssistantSettings;
+    use Filament\Notifications\Notification;
     use Pelican\AiHelpAssistant\Services\AutomaticStartupService;
+    use Pelican\AiHelpAssistant\Services\EggAdvisorService;
     use Pelican\AiHelpAssistant\Services\RepairService;
     use Pelican\AiHelpAssistant\Services\StartupMonitorService;
 
@@ -136,6 +196,20 @@ namespace {
     function user(): ?User
     {
         return $GLOBALS['ui_user'] ?? null;
+    }
+
+    function collect(array $values): object
+    {
+        return new class($values) {
+            public function __construct(private array $values) {}
+            public function flatten(): self { $flat = []; array_walk_recursive($this->values, function ($value) use (&$flat) { $flat[] = $value; }); return new self($flat); }
+            public function first(): mixed { return $this->values[0] ?? null; }
+        };
+    }
+
+    function logger(): object
+    {
+        return new class { public function warning(string $message, array $context = []): void { $GLOBALS['ui_logs'][] = [$message, $context]; } };
     }
 
     require dirname(__DIR__) . '/src/Filament/Server/Widgets/AiHelpAssistant.php';
@@ -152,7 +226,8 @@ namespace {
         $GLOBALS['ui_user'] = new User($startupRead ? ['websocket.connect', 'startup.read'] : ['websocket.connect']);
         $automatic = new AutomaticStartupService();
         $manual = new StartupMonitorService();
-        $GLOBALS['ui_services'] = [AutomaticStartupService::class => $automatic, StartupMonitorService::class => $manual, AssistantSettings::class => new AssistantSettings(), RepairService::class => new RepairService()];
+        $GLOBALS['ui_services'] = [AutomaticStartupService::class => $automatic, StartupMonitorService::class => $manual, AssistantSettings::class => new AssistantSettings(), RepairService::class => new RepairService(), EggAdvisorService::class => new EggAdvisorService()];
+        Notification::$sent = [];
 
         return [new AiHelpAssistant(), $automatic, $manual, $server];
     }
@@ -334,6 +409,37 @@ namespace {
         $widget->refreshAutomaticDiagnosis();
         uiExpect(uiFixOffer($widget) === ['type' => 'eula'], 'A newer report must offer its fix again.');
         uiExpect((new ReflectionProperty($widget, 'appliedFix'))->getAttributes(Locked::class) !== [], 'Applied fix state must be locked against browser edits.');
+    };
+
+    $tests['egg tools are hidden unless the advisor allows this admin and polling never changes eggs'] = static function (): void {
+        [$widget] = uiFixture();
+        $advisor = $GLOBALS['ui_services'][EggAdvisorService::class];
+        $eggTools = new ReflectionMethod($widget, 'eggTools');
+        uiExpect($eggTools->invoke($widget) === null && $advisor->calls === ['available'], 'Egg tools showed for a user the advisor did not allow.');
+        $advisor->available = true;
+        $advisor->lastChange = ['applied_at' => '2026-10-14T23:00:00+00:00', 'fields' => ['script_install'], 'undoable' => true];
+        uiExpect($eggTools->invoke($widget) === ['last_change' => $advisor->lastChange], 'Egg tools must show the last undoable change.');
+        $advisor->failure = new RuntimeException('secret');
+        $advisor->available = false;
+        for ($i = 0; $i < 3; $i++) { $widget->refreshAutomaticDiagnosis(); $eggTools->invoke($widget); }
+        uiExpect(array_intersect(['propose', 'apply', 'undo'], $advisor->calls) === [], 'Rendering or polling asked the AI or changed an egg.');
+    };
+
+    $tests['checking an egg stores only the review and reports failures without details'] = static function (): void {
+        [$widget] = uiFixture();
+        $advisor = $GLOBALS['ui_services'][EggAdvisorService::class];
+        $widget->checkEgg();
+        uiExpect($widget->eggProposal['id'] === 'proposal-1' && !in_array('apply', $advisor->calls, true), 'Checking the egg must only store a proposal.');
+        uiExpect((new ReflectionProperty($widget, 'eggProposal'))->getAttributes(Locked::class) !== [], 'The egg proposal must be locked against browser edits.');
+        $widget->dismissEggProposal();
+        uiExpect($widget->eggProposal === null, 'Dismiss must clear the proposal.');
+        $advisor->failure = new RuntimeException('secret-provider-body');
+        $widget->checkEgg();
+        uiExpect($widget->eggProposal === null && end(Notification::$sent)['status'] === 'danger', 'A failed check must show an error.');
+        uiExpect(!str_contains(json_encode(Notification::$sent), 'secret-provider-body'), 'Exception details must not reach the browser.');
+        $advisor->failure = \Illuminate\Validation\ValidationException::withMessages(['egg' => 'Please wait before asking the AI about this egg again.']);
+        $widget->checkEgg();
+        uiExpect(end(Notification::$sent)['body'] === 'Please wait before asking the AI about this egg again.', 'Validation messages must be shown to the admin.');
     };
 
     $failed = 0;

@@ -6,6 +6,26 @@ This is the update log for Wingman AI. Each release explains what changed and an
 
 <!-- Add new user-facing changes here before the next release. -->
 
+## [0.5.0] - 2026-10-14
+
+### AI egg check for admins
+
+- Panel admins can ask the AI whether a server's egg is causing its problem. The AI reads the egg, the last install log, and recent console output, and either explains why the egg is fine or suggests a specific change.
+- Suggestions can change the startup command, Docker images, variable defaults, the install script, or the install container. They are shown before and after, with install-script changes line by line, and risky additions are flagged (new download addresses, piping downloads into a shell, deleting outside the server folder, and more).
+- Nothing changes until an admin who may edit both the egg and the server clicks **Apply to egg** and confirms. The confirmation shows how many servers use the egg and offers to reinstall this server.
+- Wingman backs up the egg before every change (last five per egg). **Undo** restores it, unless the egg was edited again since.
+- Suggestions expire after 30 minutes, belong to the admin who asked, and are refused if the egg changed in the meantime. Each admin can ask five times per server per hour.
+
+### Clearer logs for the AI
+
+- Fixed hidden server settings with ordinary values, such as `1`, `win64`, ports, or paths, being blanked out everywhere in the console log before it reached the AI. Values named like passwords, tokens, or keys, and hidden values that look like credentials, are still masked.
+
+### Fix button
+
+- The fix box now has its colored border even when the panel has not rebuilt its styles for plugins.
+
+Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/8.5**.
+
 ## [0.4.0] - 2026-10-14
 
 ### One-click fixes
@@ -64,7 +84,7 @@ Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/
 - Added basic error checks and optional hosted or local AI explanations with evidence and suggested fix steps.
 - Added server permissions, credential redaction, and encrypted AI connection settings.
 
-[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.5.0...HEAD
 [0.3.0]: https://github.com/GhostingGodzilla/Wingman-AI/releases/tag/v0.3.0
 [0.2.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/7c9182ffed703a36d182ab188ac2c58d494aa73e
 [0.1.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/8d759582f80dfd0029a5458f93898c25cb860122

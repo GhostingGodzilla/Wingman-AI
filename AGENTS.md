@@ -23,4 +23,5 @@ Wingman AI is an independent Pelican Panel plugin. The user requires an update s
 - Keep AI API keys out of source, browser state, logs, and release artifacts. Saved keys stay encrypted in the panel's private storage.
 - Reauthorize server access on each public action. Automatic observation must never issue a power action or apply a repair.
 - One-click repairs run only from a person's confirmed click. Offer them only from deterministic rule matches (never from AI output), check each repair's own Pelican permission at click time, and keep the list limited to fixes Pelican itself supports.
+- AI egg suggestions are admin-only proposals. The AI never writes anything: an admin with permission to edit the egg and the server reviews a before/after view and applies it. The previous egg is backed up first, and undo must refuse to overwrite later edits. Treat every log as untrusted prompt input, validate every proposed field, and never apply egg changes automatically.
 - Installer paths, archive entries, backups, and rollback targets must stay within the selected panel's verified plugin directory. Do not follow symlinks or remove unrelated files.

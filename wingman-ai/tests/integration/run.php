@@ -51,7 +51,7 @@ class RecordingClient extends AiClient
         ], JSON_THROW_ON_ERROR);
     }
 
-    public function analyze(array $settings, array $input): string
+    public function analyze(array $settings, array $input, ?string $instructions = null, ?int $maxTokens = null, int $timeout = 45): string
     {
         $this->inputs[] = $input;
         if ($this->failure !== null) {
@@ -348,6 +348,16 @@ $tests['AI reports keep only the deterministic repair offer'] = static function 
     $client->answer = $answer(['type' => 'reinstall']);
     $report = $service->diagnose($server, $user, capture(['logs' => 'Error: listen EADDRINUSE: address already in use 0.0.0.0:25565']));
     expect($report['source'] === 'ai' && !array_key_exists('fix', $report), 'A model must not be able to add a repair offer.');
+};
+
+
+$tests['ordinary hidden settings no longer garble logs while passwords stay masked'] = static function (): void {
+    [$service, $server, $user, $client] = fixture();
+    $server->boundVariables = [variable('XVFB', '1', false), variable('WINEPATH', '/home/container', false), variable('RCON_PASSWORD', 'rcon-secret-4455', false)];
+    $service->diagnose($server, $user, capture(['logs' => "[21:49:10] :/home/container\$ xvfb-run wine ./Game.exe\nrcon login rcon-secret-4455\nwine: failed to open \"./Game.exe\""]));
+    $sent = json_encode($client->inputs[0]);
+    expect(str_contains($sent, '[21:49:10]') && str_contains($sent, ':\/home\/container$'), 'Ordinary hidden values garbled the log sent to AI.');
+    expect(!str_contains($sent, 'rcon-secret-4455'), 'A password still reached the AI.');
 };
 
 $failures = 0;
