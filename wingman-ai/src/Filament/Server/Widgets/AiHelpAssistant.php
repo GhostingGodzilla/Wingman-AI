@@ -19,10 +19,14 @@ use Illuminate\Support\HtmlString;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Locked;
 use Livewire\Attributes\On;
+use Pelican\AiHelpAssistant\Services\AskService;
 use Pelican\AiHelpAssistant\Services\AssistantSettings;
 use Pelican\AiHelpAssistant\Services\AutomaticStartupService;
 use Pelican\AiHelpAssistant\Services\EggAdvisorService;
+use Pelican\AiHelpAssistant\Services\IncidentService;
+use Pelican\AiHelpAssistant\Services\PerformanceService;
 use Pelican\AiHelpAssistant\Services\RepairService;
+use Pelican\AiHelpAssistant\Services\SafeReinstallService;
 use Pelican\AiHelpAssistant\Services\StartupMonitorService;
 use Throwable;
 
@@ -53,6 +57,12 @@ class AiHelpAssistant extends Widget implements HasActions, HasSchemas
     /** Display data for an AI egg suggestion; applying re-reads the stored proposal by id. */
     #[Locked]
     public ?array $eggProposal = null;
+
+    /** The Ask Wingman input; validated on the server like any browser input. */
+    public string $question = '';
+
+    #[Locked]
+    public ?array $answer = null;
 
     public function mount(): void
     {
@@ -101,7 +111,18 @@ class AiHelpAssistant extends Widget implements HasActions, HasSchemas
                 'reason' => in_array($status['reason'] ?? '', ['requires_queue', 'queue_unavailable', 'monitor_unavailable', 'disabled_or_server_unavailable', 'daily_limit', 'cooldown'], true)
                     ? $status['reason'] : null,
             ];
-            $this->autoReport = $automatic->latest($server, $user);
+            $startup = $automatic->latest($server, $user);
+            if (is_array($startup)) {
+                $startup['kind'] ??= 'startup';
+            }
+            try {
+                $incident = app(IncidentService::class)->latest($server, $user);
+            } catch (Throwable) {
+                $incident = null;
+            }
+            // Show the newest of the startup, crash, and install reports.
+            $this->autoReport = $incident !== null && ($startup === null || strcmp((string) ($incident['generated_at'] ?? ''), (string) ($startup['generated_at'] ?? '')) > 0)
+                ? $incident : $startup;
         } catch (Throwable) {
             $this->autoReport = null;
             $this->autoStatus = ['status' => 'unavailable'];
@@ -265,13 +286,17 @@ class AiHelpAssistant extends Widget implements HasActions, HasSchemas
                 'eula' => 'I accept',
                 default => 'Apply fix',
             })
-            ->schema($type === 'java_image' ? [
-                Select::make('image')->label('Java image')
-                    ->options($offer['images'])
-                    ->default($suggested)
-                    ->selectablePlaceholder(false)
-                    ->required(),
-            ] : [])
+            ->schema(match ($type) {
+                'java_image' => [
+                    Select::make('image')->label('Java image')
+                        ->options($offer['images'])
+                        ->default($suggested)
+                        ->selectablePlaceholder(false)
+                        ->required(),
+                ],
+                'reinstall' => [$this->backupToggle($offer['backup'] ?? null)],
+                default => [],
+            })
             ->action(function (array $data): void {
                 [$server, $user] = $this->context();
                 // Re-read the automatic report from encrypted storage; browser input only picks an offered image.
@@ -279,7 +304,7 @@ class AiHelpAssistant extends Widget implements HasActions, HasSchemas
                 $image = is_string($data['image'] ?? null) ? $data['image'] : null;
 
                 try {
-                    $message = app(RepairService::class)->apply($server, $user, $report, $image);
+                    $message = app(RepairService::class)->apply($server, $user, $report, $image, (bool) ($data['backup_first'] ?? false));
                 } catch (ValidationException $exception) {
                     Notification::make()->title('Fix not applied')
                         ->body(collect($exception->errors())->flatten()->first() ?? 'The fix could not be applied.')
@@ -354,14 +379,15 @@ class AiHelpAssistant extends Widget implements HasActions, HasSchemas
             ->modalDescription('This egg is used by ' . $count . ' ' . ($count === 1 ? 'server' : 'servers')
                 . '. Install-script changes apply to each of them the next time it is installed or reinstalled. Wingman saves the current egg first so you can undo this.')
             ->modalSubmitActionLabel('Apply change')
-            ->schema([
+            ->schema(fn () => [
                 Toggle::make('reinstall')->label('Reinstall this server afterwards')
-                    ->helperText('Runs the updated install script. Some files may be deleted or overwritten, so back up first.')
+                    ->helperText('Runs the updated install script. Some files may be deleted or overwritten.')
                     ->default((bool) ($proposal['reinstall'] ?? false)),
+                $this->backupToggle($this->backupStatus())->label('Back up the server first (when reinstalling)'),
             ])
             ->action(function (array $data): void {
                 [$server, $user] = $this->context();
-                $this->runEggTask('Egg updated', fn () => app(EggAdvisorService::class)->apply($server, $user, (string) ($this->eggProposal['id'] ?? ''), (bool) ($data['reinstall'] ?? false)));
+                $this->runEggTask('Egg updated', fn () => app(EggAdvisorService::class)->apply($server, $user, (string) ($this->eggProposal['id'] ?? ''), (bool) ($data['reinstall'] ?? false), (bool) ($data['backup_first'] ?? false)));
             });
     }
 
@@ -379,6 +405,87 @@ class AiHelpAssistant extends Widget implements HasActions, HasSchemas
                 [$server, $user] = $this->context();
                 $this->runEggTask('Egg restored', fn () => app(EggAdvisorService::class)->undo($server, $user));
             });
+    }
+
+    private function backupToggle(?array $status): Toggle
+    {
+        $possible = (bool) ($status['possible'] ?? false);
+
+        return Toggle::make('backup_first')->label('Back up the server first')
+            ->default($possible && (bool) (app(AssistantSettings::class)->get()['backup_before_reinstall'] ?? true))
+            ->disabled(!$possible)
+            ->helperText($possible
+                ? 'Makes a panel backup first; the reinstall starts by itself when the backup finishes.'
+                : 'No backup can be made: ' . ($status['reason'] ?? 'backups are not available for this server.'));
+    }
+
+    private function backupStatus(): ?array
+    {
+        try {
+            [$server, $user] = $this->context();
+
+            return app(SafeReinstallService::class)->backupStatus($server, $user);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /** A backup-then-reinstall in progress, and the latest result of one. */
+    protected function reinstallStatus(): array
+    {
+        try {
+            [$server] = $this->context();
+            $reinstalls = app(SafeReinstallService::class);
+
+            return ['pending' => $reinstalls->pending($server), 'notice' => $reinstalls->lastNotice($server)];
+        } catch (Throwable) {
+            return ['pending' => null, 'notice' => null];
+        }
+    }
+
+    protected function canAsk(): bool
+    {
+        try {
+            [$server, $user] = $this->context();
+
+            return app(AskService::class)->available($server, $user);
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /** Ask Wingman a question about this server. Reads context only. */
+    public function ask(): void
+    {
+        [$server, $user] = $this->context();
+        $question = $this->question;
+        try {
+            $this->answer = ['question' => trim($question), 'answer' => app(AskService::class)->ask($server, $user, $question)];
+            $this->question = '';
+        } catch (ValidationException $exception) {
+            Notification::make()->title('No answer')
+                ->body(collect($exception->errors())->flatten()->first() ?? 'Wingman could not answer.')
+                ->danger()->send();
+        } catch (Throwable $exception) {
+            logger()->warning('Wingman AI question failed.', ['exception_type' => $exception::class]);
+            Notification::make()->title('No answer')->body('Wingman could not answer right now. Try again later.')->danger()->send();
+        }
+    }
+
+    /** Lag doctor: a short, read-only usage and console check. */
+    public function checkPerformance(): void
+    {
+        [$server, $user] = $this->context();
+        try {
+            $this->report = app(PerformanceService::class)->check($server, $user);
+        } catch (ValidationException $exception) {
+            Notification::make()->title('Performance check failed')
+                ->body(collect($exception->errors())->flatten()->first() ?? 'The check could not run.')
+                ->danger()->send();
+        } catch (Throwable $exception) {
+            logger()->warning('Wingman AI performance check failed.', ['exception_type' => $exception::class]);
+            Notification::make()->title('Performance check failed')->body('Check the Wings connection, then try again.')->danger()->send();
+        }
     }
 
     private function runEggTask(string $title, callable $task): void

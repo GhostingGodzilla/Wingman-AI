@@ -13,8 +13,14 @@
             @if ($autoReport && $report)
                 <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">
                     Latest automatic result: {{ $autoReport['summary'] ?? 'Diagnosis available' }}
-                    ({{ $this->automaticReportTime() }}). Your manual diagnosis is shown below.
+                    ({{ $this->automaticReportTime() }}). Your manual check is shown below.
                 </p>
+            @endif
+            @php($reinstallStatus = $this->reinstallStatus())
+            @if ($reinstallStatus['pending'])
+                <p class="mt-2 text-sm font-semibold text-gray-950 dark:text-white">Backing up before reinstalling. The reinstall starts by itself when the backup finishes.</p>
+            @elseif ($reinstallStatus['notice'])
+                <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">{{ $reinstallStatus['notice']['message'] }}</p>
             @endif
         </div>
 
@@ -34,6 +40,10 @@
             <div class="flex flex-wrap items-center gap-3">
                 <x-filament::button type="button" data-ai-start>Start &amp; Diagnose</x-filament::button>
                 <x-filament::button type="button" color="gray" data-ai-existing>Analyze existing logs</x-filament::button>
+                <x-filament::button type="button" color="gray" wire:click="checkPerformance" wire:loading.attr="disabled" wire:target="checkPerformance">
+                    <span wire:loading.remove wire:target="checkPerformance">Check performance</span>
+                    <span wire:loading wire:target="checkPerformance">Checking…</span>
+                </x-filament::button>
                 <x-filament::button type="button" color="gray" data-ai-cancel hidden>Cancel capture</x-filament::button>
             </div>
             <div class="rounded-lg bg-gray-50 p-3 dark:bg-gray-900" role="status" aria-live="polite" aria-atomic="true">
@@ -45,15 +55,18 @@
         @php
             $displayReport = $report ?? $autoReport;
             $isAutomaticReport = $report === null && $autoReport !== null;
+            $reportKind = $displayReport['kind'] ?? ($isAutomaticReport ? 'startup' : 'manual');
         @endphp
 
         @if ($displayReport)
             <div class="mt-5 space-y-4 border-t border-gray-200 pt-5 dark:border-gray-700" aria-label="Diagnostic report">
                 @if ($isAutomaticReport)
                     <p class="text-xs font-medium text-primary-600 dark:text-primary-400">
-                        {{ ($autoStatus['status'] ?? '') === 'monitoring' ? 'Previous automatic diagnosis' : 'Automatic diagnosis' }} &middot;
+                        {{ match ($reportKind) { 'crash' => 'Crash while running', 'install' => 'Install check', default => ($autoStatus['status'] ?? '') === 'monitoring' ? 'Previous automatic diagnosis' : 'Automatic diagnosis' } }} &middot;
                         <time datetime="{{ $autoReport['generated_at'] ?? '' }}">{{ $this->automaticReportTime() }}</time>
                     </p>
+                @elseif ($reportKind === 'performance')
+                    <p class="text-xs font-medium text-primary-600 dark:text-primary-400">Performance check &middot; just now</p>
                 @endif
                 <div>
                     <div class="flex flex-wrap items-center justify-between gap-2">
@@ -106,6 +119,28 @@
                                 <li class="whitespace-pre-wrap">{{ $item }}</li>
                             @endforeach
                         </ul>
+                    </div>
+                @endif
+            </div>
+        @endif
+
+        @if ($this->canAsk())
+            <div style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid rgba(127, 127, 127, 0.25);" aria-label="Ask Wingman">
+                <p class="text-sm font-semibold text-gray-950 dark:text-white">Ask Wingman</p>
+                <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Ask anything about this server, like how to add mods or why it lags. Wingman answers using this server's game, settings, and recent console output. It cannot change anything.</p>
+                <form wire:submit="ask" class="mt-3 flex flex-wrap items-center gap-3">
+                    <input type="text" wire:model="question" maxlength="{{ \Pelican\AiHelpAssistant\Services\AskService::MAX_QUESTION }}" placeholder="Your question" aria-label="Your question"
+                        class="rounded-lg text-sm text-gray-950 dark:text-white" style="flex: 1 1 16rem; min-width: 0; padding: 0.5rem 0.75rem; border: 1px solid rgba(127, 127, 127, 0.4); background: transparent;">
+                    <x-filament::button type="submit" wire:loading.attr="disabled" wire:target="ask">
+                        <span wire:loading.remove wire:target="ask">Ask</span>
+                        <span wire:loading wire:target="ask">Thinking…</span>
+                    </x-filament::button>
+                </form>
+                @if ($answer)
+                    <div class="mt-3 rounded-lg bg-gray-50 p-3 dark:bg-gray-900" role="status" aria-live="polite">
+                        <p class="text-xs text-gray-500 dark:text-gray-400">You asked: {{ $answer['question'] }}</p>
+                        <p class="mt-2 whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300">{{ $answer['answer'] }}</p>
+                        <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">AI answers can be wrong. Check before changing anything important.</p>
                     </div>
                 @endif
             </div>

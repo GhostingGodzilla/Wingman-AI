@@ -47,6 +47,20 @@ class AiHelpAssistantPlugin implements Plugin, HasPluginSettings
                     TextInput::make('auto_daily_limit')->label('Automatic reports per server per day')->numeric()->minValue(1)->maxValue(1000)->required(),
                     TextInput::make('auto_cooldown_seconds')->label('Minimum seconds between automatic reports')->numeric()->minValue(60)->maxValue(3600)->required()
                         ->helperText('Limits repeated reports during a crash loop.'),
+                    Toggle::make('crash_watch_enabled')->label('Explain crashes while a server is running')->inline(false)
+                        ->helperText('Uses the crash reports Wings sends. Crashes during a watched start are covered by the startup report.'),
+                    Toggle::make('install_check_enabled')->label('Check the install log after every install or reinstall')->inline(false)
+                        ->helperText('Catches installs that report success although a download failed.'),
+                ]),
+            Section::make('Safety')
+                ->schema([
+                    Toggle::make('backup_before_reinstall')->label('Back up a server before a Wingman reinstall')->inline(false)
+                        ->helperText('The default for the "Back up first" switch. Needs a backup limit of at least 1 on the server.'),
+                ]),
+            Section::make('Ask Wingman')->description('Lets people with console access ask the AI questions about their server. Needs an AI connection.')
+                ->schema([
+                    Toggle::make('ask_enabled')->label('Show the Ask Wingman box')->inline(false),
+                    TextInput::make('ask_daily_limit')->label('Questions per user per day')->numeric()->minValue(1)->maxValue(1000)->required(),
                 ]),
             Section::make('AI connection')->description('Choose an AI service or a model running on your own machine. Basic error checks work without an AI connection.')
                 ->schema([

@@ -8,7 +8,6 @@ use App\Models\Server;
 use App\Models\User;
 use App\Repositories\Daemon\DaemonFileRepository;
 use App\Repositories\Daemon\DaemonServerRepository;
-use App\Services\Servers\ReinstallServerService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\ValidationException;
@@ -38,6 +37,9 @@ class RepairService
         if (!is_string($type) || !isset(self::PERMISSIONS[$type]) || !$user->can(self::PERMISSIONS[$type], $server)) {
             return null;
         }
+        if ($type === 'reinstall') {
+            return ['type' => $type, 'backup' => app(SafeReinstallService::class)->backupStatus($server, $user)];
+        }
         if ($type !== 'java_image') {
             return ['type' => $type];
         }
@@ -51,7 +53,7 @@ class RepairService
     }
 
     /** Apply the report's repair after reauthorizing it; returns a message for the user. */
-    public function apply(Server $server, User $user, ?array $report, ?string $image = null): string
+    public function apply(Server $server, User $user, ?array $report, ?string $image = null, bool $backupFirst = false): string
     {
         $offer = $this->offer($server, $user, $report);
         $this->assert($offer !== null, 'This fix is no longer available. Run a new diagnosis.');
@@ -64,7 +66,7 @@ class RepairService
         RateLimiter::hit($key, 300);
 
         // Shares the capture's power lock so a repair cannot race a diagnostic start.
-        return Cache::lock('wingman-ai:power:' . $server->id, 15)->block(3, function () use ($server, $user, $offer, $image) {
+        return Cache::lock('wingman-ai:power:' . $server->id, 15)->block(3, function () use ($server, $user, $offer, $image, $backupFirst) {
             $server->refresh();
             try {
                 $server->validateCurrentState();
@@ -74,7 +76,7 @@ class RepairService
 
             return match ($offer['type']) {
                 'java_image' => $this->switchImage($server, $user, $offer, $image),
-                'reinstall' => $this->reinstall($server, $user),
+                'reinstall' => app(SafeReinstallService::class)->reinstall($server, $user, $backupFirst, 'repair'),
                 'eula' => $this->acceptEula($server, $user),
             };
         });
@@ -88,14 +90,6 @@ class RepairService
             ->property(['old' => $original, 'new' => $image, 'source' => 'wingman-ai'])->log();
 
         return $this->restart($server, $user, 'Switched to ' . $offer['images'][$image] . '.');
-    }
-
-    private function reinstall(Server $server, User $user): string
-    {
-        app(ReinstallServerService::class)->handle($server);
-        Activity::event('server:settings.reinstall')->subject($server)->actor($user)->property('source', 'wingman-ai')->log();
-
-        return 'Reinstall started. Start the server from the console after the installation finishes.';
     }
 
     private function acceptEula(Server $server, User $user): string

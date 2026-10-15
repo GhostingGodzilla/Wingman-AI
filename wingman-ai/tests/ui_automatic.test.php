@@ -51,6 +51,60 @@ namespace Filament\Notifications {
 }
 
 namespace Pelican\AiHelpAssistant\Services {
+    class IncidentService
+    {
+        public array $calls = [];
+        public ?array $report = null;
+
+        public function latest(\App\Models\Server $server, \App\Models\User $user): ?array
+        {
+            $this->calls[] = 'latest';
+
+            return $this->report;
+        }
+    }
+
+    class SafeReinstallService
+    {
+        public ?array $pending = null;
+        public ?array $notice = null;
+
+        public function pending(\App\Models\Server $server): ?array { return $this->pending; }
+
+        public function lastNotice(\App\Models\Server $server): ?array { return $this->notice; }
+
+        public function backupStatus(\App\Models\Server $server, \App\Models\User $user): array { return ['possible' => false, 'reason' => 'test']; }
+    }
+
+    class AskService
+    {
+        public array $calls = [];
+        public bool $available = true;
+        public ?\Throwable $failure = null;
+
+        public function available(\App\Models\Server $server, \App\Models\User $user): bool { return $this->available; }
+
+        public function ask(\App\Models\Server $server, \App\Models\User $user, string $question): string
+        {
+            $this->calls[] = $question;
+            if ($this->failure !== null) { throw $this->failure; }
+
+            return 'Use the Files page.';
+        }
+    }
+
+    class PerformanceService
+    {
+        public int $calls = 0;
+
+        public function check(\App\Models\Server $server, \App\Models\User $user): array
+        {
+            $this->calls++;
+
+            return ['summary' => 'No resource limit is being hit.', 'kind' => 'performance', 'source' => 'rules'];
+        }
+    }
+
     class EggAdvisorService
     {
         public array $calls = [];
@@ -183,9 +237,13 @@ namespace {
     use Pelican\AiHelpAssistant\Filament\Server\Widgets\AiHelpAssistant;
     use Pelican\AiHelpAssistant\Services\AssistantSettings;
     use Filament\Notifications\Notification;
+    use Pelican\AiHelpAssistant\Services\AskService;
     use Pelican\AiHelpAssistant\Services\AutomaticStartupService;
     use Pelican\AiHelpAssistant\Services\EggAdvisorService;
+    use Pelican\AiHelpAssistant\Services\IncidentService;
+    use Pelican\AiHelpAssistant\Services\PerformanceService;
     use Pelican\AiHelpAssistant\Services\RepairService;
+    use Pelican\AiHelpAssistant\Services\SafeReinstallService;
     use Pelican\AiHelpAssistant\Services\StartupMonitorService;
 
     function app(string $class): object
@@ -226,7 +284,8 @@ namespace {
         $GLOBALS['ui_user'] = new User($startupRead ? ['websocket.connect', 'startup.read'] : ['websocket.connect']);
         $automatic = new AutomaticStartupService();
         $manual = new StartupMonitorService();
-        $GLOBALS['ui_services'] = [AutomaticStartupService::class => $automatic, StartupMonitorService::class => $manual, AssistantSettings::class => new AssistantSettings(), RepairService::class => new RepairService(), EggAdvisorService::class => new EggAdvisorService()];
+        $GLOBALS['ui_services'] = [AutomaticStartupService::class => $automatic, StartupMonitorService::class => $manual, AssistantSettings::class => new AssistantSettings(), RepairService::class => new RepairService(), EggAdvisorService::class => new EggAdvisorService(),
+            IncidentService::class => new IncidentService(), SafeReinstallService::class => new SafeReinstallService(), AskService::class => new AskService(), PerformanceService::class => new PerformanceService()];
         Notification::$sent = [];
 
         return [new AiHelpAssistant(), $automatic, $manual, $server];
@@ -248,7 +307,7 @@ namespace {
         $automatic->statuses[1] = ['status' => 'failed', 'latest_timestamp' => '2026-10-14T23:00:00+00:00'];
         $automatic->reports[1] = ['summary' => 'A required file is missing.', 'generated_at' => '2026-10-14T23:00:00+00:00', 'outcome' => 'failed'];
         $widget->mount();
-        uiExpect($widget->autoReport === $automatic->reports[1], 'Prior automatic report was not loaded.');
+        uiExpect($widget->autoReport === $automatic->reports[1] + ['kind' => 'startup'], 'Prior automatic report was not loaded.');
         uiExpect($widget->autoStatus['status'] === 'failed', 'Current automatic status was not loaded.');
         uiExpect(array_column($automatic->calls, 0) === ['status', 'latest'], 'Polling performed an action other than reading status/results.');
         uiExpect($manual->calls === [] && $widget->report === null, 'Initial automatic load invoked a manual diagnosis.');
@@ -387,7 +446,7 @@ namespace {
         $widget->refreshAutomaticDiagnosis();
         $repairs->offer = ['type' => 'reinstall'];
         uiExpect(uiFixOffer($widget) === ['type' => 'reinstall'], 'A permitted repair was not offered.');
-        uiExpect($repairs->calls[0] === ['offer', $server->id, $report], 'The offer must be checked against the displayed automatic report.');
+        uiExpect($repairs->calls[0] === ['offer', $server->id, $report + ['kind' => 'startup']], 'The offer must be checked against the displayed automatic report.');
         $repairs->offer = null;
         uiExpect(uiFixOffer($widget) === null, 'A repair the service refuses must not be shown.');
         $repairs->failure = new RuntimeException('secret-repair-error');
@@ -440,6 +499,62 @@ namespace {
         $advisor->failure = \Illuminate\Validation\ValidationException::withMessages(['egg' => 'Please wait before asking the AI about this egg again.']);
         $widget->checkEgg();
         uiExpect(end(Notification::$sent)['body'] === 'Please wait before asking the AI about this egg again.', 'Validation messages must be shown to the admin.');
+    };
+
+    $tests['the newest of the startup, crash, and install reports is shown'] = static function (): void {
+        [$widget, $automatic] = uiFixture();
+        $incidents = $GLOBALS['ui_services'][IncidentService::class];
+        $automatic->reports[1] = ['summary' => 'Startup failed.', 'generated_at' => '2026-10-14T23:00:00+00:00'];
+        $incidents->report = ['summary' => 'Crashed while running.', 'generated_at' => '2026-10-14T23:30:00+00:00', 'kind' => 'crash'];
+        $widget->refreshAutomaticDiagnosis();
+        uiExpect(($widget->autoReport['kind'] ?? null) === 'crash', 'A newer crash report must be shown.');
+        $automatic->reports[1]['generated_at'] = '2026-10-14T23:45:00+00:00';
+        $widget->refreshAutomaticDiagnosis();
+        uiExpect(($widget->autoReport['kind'] ?? null) === 'startup', 'A newer startup report must replace an older crash report.');
+        $automatic->reports = [];
+        $widget->refreshAutomaticDiagnosis();
+        uiExpect(($widget->autoReport['kind'] ?? null) === 'crash', 'A crash report must remain after the startup report clears.');
+        $GLOBALS['ui_user']->permissions = ['websocket.connect'];
+        $widget->refreshAutomaticDiagnosis();
+        uiExpect($widget->autoReport === null && $incidents->calls === ['latest', 'latest', 'latest'], 'Reports must stay hidden without startup access.');
+    };
+
+    $tests['ask keeps the question server-side and reports refusals'] = static function (): void {
+        [$widget] = uiFixture();
+        $ask = $GLOBALS['ui_services'][AskService::class];
+        uiExpect((new ReflectionMethod($widget, 'canAsk'))->invoke($widget) === true, 'Ask must follow the service availability.');
+        $widget->question = '  How do I add mods?  ';
+        $widget->ask();
+        uiExpect($ask->calls === ['  How do I add mods?  '] && $widget->answer === ['question' => 'How do I add mods?', 'answer' => 'Use the Files page.'] && $widget->question === '', 'An answer must be shown and the input cleared.');
+        uiExpect((new ReflectionProperty($widget, 'answer'))->getAttributes(Locked::class) !== [], 'The answer must be locked against browser edits.');
+        $ask->failure = \Illuminate\Validation\ValidationException::withMessages(['question' => "You have reached today's question limit. Try again tomorrow."]);
+        $widget->question = 'Another?';
+        $widget->ask();
+        uiExpect(end(Notification::$sent)['body'] === "You have reached today's question limit. Try again tomorrow." && $widget->question === 'Another?', 'A refusal must be shown and keep the question.');
+        $ask->failure = new RuntimeException('secret-provider-body');
+        $widget->ask();
+        uiExpect(!str_contains(json_encode(Notification::$sent), 'secret-provider-body'), 'Exception details must not reach the browser.');
+        $ask->available = false;
+        uiExpect((new ReflectionMethod($widget, 'canAsk'))->invoke($widget) === false, 'Ask must hide when unavailable.');
+    };
+
+    $tests['performance checks show as a manual report and polling never runs one'] = static function (): void {
+        [$widget, $automatic] = uiFixture();
+        $performance = $GLOBALS['ui_services'][PerformanceService::class];
+        for ($i = 0; $i < 3; $i++) { $widget->refreshAutomaticDiagnosis(); }
+        uiExpect($performance->calls === 0, 'Polling ran a performance check.');
+        $widget->checkPerformance();
+        uiExpect($performance->calls === 1 && ($widget->report['kind'] ?? null) === 'performance', 'The performance result must show as the current report.');
+    };
+
+    $tests['backup-then-reinstall progress is shown from the service'] = static function (): void {
+        [$widget] = uiFixture();
+        $reinstalls = $GLOBALS['ui_services'][SafeReinstallService::class];
+        $status = new ReflectionMethod($widget, 'reinstallStatus');
+        uiExpect($status->invoke($widget) === ['pending' => null, 'notice' => null], 'No progress should show by default.');
+        $reinstalls->pending = ['backup' => 'uuid', 'since' => '2026-10-14T23:00:00+00:00'];
+        $reinstalls->notice = ['message' => 'The backup failed, so Wingman did not reinstall the server.', 'at' => '2026-10-14T22:00:00+00:00'];
+        uiExpect($status->invoke($widget)['pending']['backup'] === 'uuid', 'A pending backup must be shown.');
     };
 
     $failed = 0;

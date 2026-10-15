@@ -1,6 +1,6 @@
 # Wingman AI for Pelican
 
-A console assistant that automatically watches server starts, highlights likely causes of failure, and gives steps to fix them. It uses the selected server's egg, available startup settings, and console output to identify the application rather than assuming a particular game.
+A console assistant that watches server starts, crashes, and installs, explains what went wrong, and gives steps to fix it, with one-click fixes for common problems. It can also check for lag, answer questions about a server, and (for admins) suggest fixes to a server's egg. It uses the selected server's egg, available startup settings, and console output to identify the application rather than assuming a particular game.
 
 This release targets **Pelican Panel 1.0.0-rc.1**, its plugin API 1, and PHP 8.4/8.5. The manifest deliberately restricts installation to that panel version because Pelican's console and internal services can change between releases. An older panel needs an adapted build; do not remove the version restriction just to force installation.
 
@@ -22,6 +22,22 @@ The report contains a likely cause, confidence, evidence, and numbered fix steps
 
 **Analyze existing logs** reads recent Wings console history without starting the server. Automatic reports also use recent logs that may include an earlier run; matching errors are treated as possible causes rather than proof about the latest attempt. A running state only means the server remained running during observation.
 
+### Crash watch
+
+If a server crashes **while it is running** (for example out of memory during play, or a mod failing when a player joins), Wingman explains that crash too. It uses the crash report Wings sends (exit code, out-of-memory flag, and last console lines) plus recent console history. The report appears in the Wingman box as **Crash while running** and stays for 24 hours, even if Wings restarts the server automatically. Crashes during a watched start are explained by the startup report instead, so you do not get two reports. Crash reports share the automatic limits (cooldown and reports per day) to keep crash loops quiet.
+
+### Install check
+
+After every install or reinstall, Wingman reads the install log. Many install scripts keep going after an error, so Pelican can mark a server as installed although a download failed (for example SteamCMD's `ERROR! Failed to install app ... (Missing configuration)`). Wingman recognizes failed SteamCMD downloads and logins, failed downloads, damaged archives, full disks, missing commands, and other errors. It shows an **Install check** report with a **Reinstall server** fix. A later clean install clears the warning.
+
+### Check performance (lag doctor)
+
+**Check performance** takes three quick readings of CPU, memory, and disk use and reads recent console output for lag warnings (for example Minecraft's "Can't keep up!", watchdog warnings, or Java running out of memory). It reports which limits are being hit and what to do. With an AI connection, it adds an explanation in plain language; without one, the built-in checks still work. A short check can miss lag that comes and goes, so run it while the lag is happening.
+
+### Ask Wingman
+
+People with console access can type a question about their server (for example "How do I add mods?" or "Why does it lag at night?"). Wingman answers using the server's game, limits, startup settings (with startup access), and recent console output. It cannot change anything. Each person can ask a limited number of questions per day (20 by default), and the box needs an AI connection. AI answers can be wrong; check before changing anything important.
+
 ### One-click fixes
 
 For three well-understood problems, the report offers a fix button. Nothing changes until you click it and confirm:
@@ -29,8 +45,10 @@ For three well-understood problems, the report offers a fix button. Nothing chan
 | Problem found | Button | What it does | Permission needed |
 |---|---|---|---|
 | Java version too old | **Switch Java version** | Switches the server to a newer Java image from its egg's list (suggesting the closest one that works) and restarts it | `startup.docker-image` |
-| Game files missing (for example `wine: failed to open "...exe"` or a missing server JAR) | **Reinstall server** | Runs Pelican's normal reinstall so the egg's install script downloads the files again. Back up first: a reinstall can overwrite files | `settings.reinstall` |
+| Game files missing (for example `wine: failed to open "...exe"`, a missing server JAR, or a failed install) | **Reinstall server** | Runs Pelican's normal reinstall so the egg's install script downloads the files again. With **Back up the server first** on, Wingman makes a panel backup and starts the reinstall only after the backup succeeds | `settings.reinstall` (and `backup.create` to back up first) |
 | Minecraft EULA not accepted | **Accept EULA** | After you agree to the linked Minecraft EULA, writes `eula=true` to `eula.txt` and restarts the server | `file.update` |
+
+**Back up first** needs the server to allow at least one backup (its backup limit, set by an admin) and room under that limit; Wingman never deletes an older backup to make room. If the backup fails, the reinstall is cancelled and the Wingman box says so. The switch's default can be changed in the plugin settings.
 
 Fixes are chosen only by Wingman's built-in error checks, never by the AI model. Permissions are checked again when you click. The restart after a fix also needs `control.restart`; without it, you are told to start the server yourself. An administrator's custom Docker image is never replaced. Each fix is recorded in the server's activity log, and a user can apply at most three fixes per server every five minutes. The automatic watcher never applies a fix by itself.
 
@@ -95,6 +113,7 @@ AI requests use the Chat Completions format for compatibility with hosted and lo
 ## Access and data
 
 - Existing Pelican permissions apply. Reading output requires console websocket access; manually starting requires `control.start`. Manual startup settings are included only with `startup.read`. Viewing an automatic report requires both console access and `startup.read`, since background analysis runs with the current server owner's permitted context. The manual assistant's own websocket token is read only.
+- Crash and install checks run in the background with the server owner's permitted context, like automatic startup reports, and need the same access to view (console and `startup.read`). Performance checks and questions need console access; startup details are included only with `startup.read`.
 - Clicking a fix button and confirming authorizes only that fix and, with `control.restart`, a restart. Each fix requires its own permission, listed under [One-click fixes](#one-click-fixes).
 - Clicking **Start & Diagnose** authorizes a normal server start. Opening the Console page only retrieves the automatic status/report; it does not start a server. Cancelling a manual capture does not stop the server or disable automatic protection.
 - Automatic reports and existing-log checks are collected through panel-to-Wings requests. Manual live console captures use your browser's Wings connection, so closing the page ends a manual live capture. The browser does not receive the AI API key.

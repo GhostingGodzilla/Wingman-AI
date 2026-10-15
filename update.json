@@ -1,7 +1,7 @@
 {
     "1.0.0-rc.1": {
-        "version": "0.5.0",
+        "version": "0.6.0",
         "download_url": "https://raw.githubusercontent.com/GhostingGodzilla/Wingman-AI/main/dist/wingman-ai.zip",
-        "sha256": "90c64f149a59876966c151197fda193107322a086988f52ee58c70348eeb1689"
+        "sha256": "0ff99bc0ee485a8cdef530db94619acabc73885c16a620f7422aa5b42fd54461"
     }
 }

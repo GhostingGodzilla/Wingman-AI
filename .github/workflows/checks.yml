@@ -40,10 +40,11 @@ jobs:
           fi
       - name: Test release summary extraction and validation
         run: php tests/release/release-notes.test.php
-      - name: Test plugin diagnostics, access controls, monitoring, repairs, and egg suggestions
+      - name: Test plugin diagnostics, access controls, monitoring, repairs, egg suggestions, and incident checks
         run: |
           php wingman-ai/tests/php/helpers_test.php
           php wingman-ai/tests/php/egg_helpers_test.php
+          php wingman-ai/tests/php/incident_rules_test.php
           php wingman-ai/tests/php/automatic_state_test.php
           php wingman-ai/tests/integration/run.php
           php wingman-ai/tests/monitor.test.php
@@ -52,6 +53,9 @@ jobs:
           php wingman-ai/tests/ui_automatic.test.php
           php wingman-ai/tests/repair.test.php
           php wingman-ai/tests/egg_advisor.test.php
+          php wingman-ai/tests/incident.test.php
+          php wingman-ai/tests/safe_reinstall.test.php
+          php wingman-ai/tests/ask_performance.test.php
           node --test wingman-ai/tests/js/startup-monitor.test.cjs
       - name: Check installer shell syntax
         run: |

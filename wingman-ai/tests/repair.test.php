@@ -124,6 +124,16 @@ namespace Illuminate\Validation {
 }
 
 namespace Pelican\AiHelpAssistant\Services {
+    class SafeReinstallService
+    {
+        public array $status = ['possible' => true, 'reason' => null];
+        public function backupStatus(\App\Models\Server $server, \App\Models\User $user): array { return $this->status; }
+        public function reinstall(\App\Models\Server $server, \App\Models\User $user, bool $backupFirst, string $ability): string
+        {
+            $GLOBALS['actions'][] = 'reinstall:' . $server->id . ($backupFirst ? ':backup' : '') . ':' . $ability;
+            return $backupFirst ? 'Backing up first.' : 'Reinstall started.';
+        }
+    }
     class AutomaticStartupService
     {
         public ?\Throwable $failure = null;
@@ -146,6 +156,7 @@ namespace {
     use Illuminate\Support\Facades\RateLimiter;
     use Pelican\AiHelpAssistant\Services\AutomaticStartupService;
     use Pelican\AiHelpAssistant\Services\RepairService;
+    use Pelican\AiHelpAssistant\Services\SafeReinstallService;
 
     function app(string $class): object { return $GLOBALS['bindings'][$class]; }
 
@@ -172,6 +183,7 @@ namespace {
             DaemonServerRepository::class => new DaemonServerRepository(),
             DaemonFileRepository::class => new DaemonFileRepository(),
             ReinstallServerService::class => new ReinstallServerService(),
+            SafeReinstallService::class => new SafeReinstallService(),
         ];
 
         return [new RepairService(), new Server(), new User($permissions)];
@@ -242,11 +254,15 @@ namespace {
         check(eventNames() === ['server:startup.image', 'server:power.restart'], 'The restart must be audited.');
     });
 
-    $runTest('reinstall runs Pelican reinstall once and never sends power', function () use ($reinstall) {
+    $runTest('reinstall goes through the backup-aware reinstall once and never sends power', function () use ($reinstall) {
         [$repairs, $server, $user] = harness(['settings.reinstall', 'control.restart']);
+        check($repairs->offer($server, $user, $reinstall) === ['type' => 'reinstall', 'backup' => ['possible' => true, 'reason' => null]], 'The reinstall offer must include whether a backup is possible.');
         $message = $repairs->apply($server, $user, $reinstall);
-        check($GLOBALS['actions'] === ['reinstall:1'] && str_contains($message, 'Reinstall started'), 'Reinstall did not run exactly once.');
-        check(eventNames() === ['server:settings.reinstall'], 'Reinstall must be audited.');
+        check($GLOBALS['actions'] === ['reinstall:1:repair'] && str_contains($message, 'Reinstall started'), 'Reinstall did not run exactly once.');
+        RateLimiter::$counts = [];
+        $GLOBALS['actions'] = [];
+        $message = $repairs->apply($server, $user, $reinstall, null, true);
+        check($GLOBALS['actions'] === ['reinstall:1:backup:repair'] && str_contains($message, 'Backing up first'), 'The "Back up first" choice must be passed on.');
     });
 
     $runTest('EULA acceptance writes only eula.txt and restarts with permission', function () use ($eula) {

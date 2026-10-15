@@ -6,6 +6,36 @@ This is the update log for Wingman AI. Each release explains what changed and an
 
 <!-- Add new user-facing changes here before the next release. -->
 
+## [0.6.0] - 2026-10-14
+
+### Crash watch
+
+- Wingman now explains crashes that happen while a server is running, not only failed starts. It uses the crash report from Wings (exit code, out of memory, last lines) and recent console output. The report shows as **Crash while running** and stays even if Wings restarts the server.
+- Crashes during a watched start are still explained by the startup report, so there are no duplicate reports. Crash reports use the same cooldown and daily limit as other automatic reports.
+
+### Install check
+
+- After every install or reinstall, Wingman reads the install log and warns when it failed, including installs that Pelican marked as successful although a download failed (such as SteamCMD's "Missing configuration" error). The report offers **Reinstall server**, and a clean install clears the warning.
+
+### Back up before reinstalling
+
+- Reinstall fixes, both the one-click fix and the AI egg check, have a **Back up the server first** switch. Wingman makes a panel backup and starts the reinstall only after the backup succeeds. If the backup fails, the reinstall is cancelled and the Wingman box says so.
+- Backups need the server's backup limit to be at least 1 with room left; Wingman never deletes older backups. The switch's default can be changed in the plugin settings.
+
+### Check performance
+
+- New **Check performance** button: takes three quick readings of CPU, memory, and disk use, reads recent console output for lag warnings, and explains which limits are being hit and what to do. It works without AI, and uses AI for a fuller explanation when connected.
+
+### Ask Wingman
+
+- People with console access can ask questions about their server and get a plain-language answer based on its game, settings, and recent console output. Wingman cannot change anything from here. Questions are limited per person per day (20 by default) and need an AI connection.
+
+### Settings
+
+- New settings: crash watch, install check, the default for backing up before a reinstall, and Ask Wingman with its daily limit. All are on by default.
+
+Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/8.5**.
+
 ## [0.5.0] - 2026-10-14
 
 ### AI egg check for admins
@@ -84,7 +114,7 @@ Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/
 - Added basic error checks and optional hosted or local AI explanations with evidence and suggested fix steps.
 - Added server permissions, credential redaction, and encrypted AI connection settings.
 
-[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.6.0...HEAD
 [0.3.0]: https://github.com/GhostingGodzilla/Wingman-AI/releases/tag/v0.3.0
 [0.2.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/7c9182ffed703a36d182ab188ac2c58d494aa73e
 [0.1.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/8d759582f80dfd0029a5458f93898c25cb860122

@@ -81,6 +81,24 @@ class AutomaticStartupService
         });
     }
 
+    /** Automatic checks are on and a delayed queue can run them. */
+    public function ready(): bool
+    {
+        return $this->enabled(app(AssistantSettings::class)->get()) && $this->queueAvailable();
+    }
+
+    /** Whether a crash at this time belongs to a watched start, which the startup report explains. */
+    public function covers(int $serverId, float $at): bool
+    {
+        $state = Cache::get($this->stateKey($serverId));
+        if (!is_array($state) || !isset($state['started_at']) || ($state['terminal'] ?? null) === 'healthy') {
+            return false;
+        }
+        $started = (float) $state['started_at'];
+
+        return $at >= $started - 5 && $at <= $started + $this->watchSeconds(app(AssistantSettings::class)->get()) + 30;
+    }
+
     public function check(int $serverId, string $generation): void
     {
         // A separate processing lock leaves state callbacks responsive during I/O.

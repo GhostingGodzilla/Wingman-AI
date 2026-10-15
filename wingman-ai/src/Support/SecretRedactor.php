@@ -27,6 +27,25 @@ final class SecretRedactor
             && preg_match('/^[\d.:,\/\s_-]+$/', $value) !== 1;
     }
 
+    /**
+     * Secret values among a server's variable rows (env_variable, server_value, default_value, user_viewable).
+     *
+     * @return list<string>
+     */
+    public static function variableSecrets(iterable $variables): array
+    {
+        $secrets = [];
+        foreach ($variables as $variable) {
+            foreach ([$variable->server_value ?? null, $variable->default_value ?? null] as $value) {
+                if (is_scalar($value) && self::isVariableSecret((string) $variable->env_variable, (string) $value, (bool) $variable->user_viewable)) {
+                    $secrets[] = (string) $value;
+                }
+            }
+        }
+
+        return array_values(array_unique($secrets));
+    }
+
     public static function redact(string $text, array $knownSecrets = []): string
     {
         // Remove terminal styling before matching secrets split by ANSI codes.

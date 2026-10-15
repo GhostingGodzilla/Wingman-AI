@@ -2,12 +2,10 @@
 
 namespace Pelican\AiHelpAssistant\Services;
 
-use App\Facades\Activity;
 use App\Models\Egg;
 use App\Models\Server;
 use App\Models\User;
 use App\Repositories\Daemon\DaemonServerRepository;
-use App\Services\Servers\ReinstallServerService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -99,7 +97,7 @@ class EggAdvisorService
         return $this->display($id, $egg, $current, $proposal);
     }
 
-    public function apply(Server $server, User $user, string $id, bool $reinstall): string
+    public function apply(Server $server, User $user, string $id, bool $reinstall, bool $backupFirst = false): string
     {
         $this->assert($this->allowed($server, $user), 'You need permission to edit this egg and server.');
         $entry = Cache::get($this->proposalKey($id));
@@ -107,7 +105,7 @@ class EggAdvisorService
         $changes = $entry['proposal']['changes'];
         $this->assert($changes !== [], 'This suggestion has no changes to apply.');
 
-        return Cache::lock('wingman-ai:egg:' . $entry['egg'], 15)->block(3, function () use ($server, $user, $id, $entry, $changes, $reinstall) {
+        return Cache::lock('wingman-ai:egg:' . $entry['egg'], 15)->block(3, function () use ($server, $user, $id, $entry, $changes, $reinstall, $backupFirst) {
             $server->refresh();
             $egg = $server->egg;
             $this->assert($egg->id === $entry['egg'] && $this->hash($this->snapshot($egg)) === $entry['hash'], 'This egg changed after the AI suggestion. Ask the AI again.');
@@ -119,6 +117,11 @@ class EggAdvisorService
                 }
             }
             $this->validateVariables($egg, $changes['variables'] ?? []);
+            if ($reinstall && $backupFirst) {
+                // Refuse before touching the egg, so a missing backup never leaves a half-done fix.
+                $backup = app(SafeReinstallService::class)->backupStatus($server, $user);
+                $this->assert($backup['possible'], 'No backup could be made: ' . $backup['reason'] . ' Turn off "Back up first" to reinstall without a backup.');
+            }
 
             // Saved first, so the previous egg survives even if the update fails part way.
             $entries = $this->backups($egg->id);
@@ -154,9 +157,11 @@ class EggAdvisorService
 
             $message = 'Updated the "' . $egg->name . '" egg. A backup was saved; use Undo to restore it.';
             if ($reinstall) {
-                app(ReinstallServerService::class)->handle($server);
-                Activity::event('server:settings.reinstall')->subject($server)->actor($user)->property('source', 'wingman-ai')->log();
-                $message .= ' Reinstall started.';
+                try {
+                    $message .= ' ' . app(SafeReinstallService::class)->reinstall($server, $user, $backupFirst, 'egg');
+                } catch (ValidationException $exception) {
+                    $message .= ' The reinstall did not start: ' . (collect($exception->errors())->flatten()->first() ?? $exception->getMessage());
+                }
             }
 
             return $message;

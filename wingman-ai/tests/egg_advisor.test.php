@@ -200,11 +200,26 @@ namespace Illuminate\Support {
 namespace Illuminate\Validation {
     class ValidationException extends \RuntimeException
     {
-        public static function withMessages(array $messages): self { return new self((string) reset($messages)); }
+        public array $messages = [];
+        public static function withMessages(array $messages): self { $exception = new self((string) reset($messages)); $exception->messages = $messages; return $exception; }
+        public function errors(): array { return $this->messages; }
     }
 }
 
 namespace Pelican\AiHelpAssistant\Services {
+    class SafeReinstallService
+    {
+        public array $status = ['possible' => true, 'reason' => null];
+        public array $calls = [];
+        public ?\Throwable $failure = null;
+        public function backupStatus(\App\Models\Server $server, \App\Models\User $user): array { return $this->status; }
+        public function reinstall(\App\Models\Server $server, \App\Models\User $user, bool $backupFirst, string $ability): string
+        {
+            $this->calls[] = [$server->id, $backupFirst, $ability];
+            if ($this->failure !== null) throw $this->failure;
+            return $backupFirst ? 'Backing up first.' : 'Reinstall started.';
+        }
+    }
     class AssistantSettings
     {
         public array $values = ['enabled' => true, 'ai_enabled' => true, 'base_url' => 'https://ai.example.test/v1', 'model' => 'test-model', 'api_key' => 'provider-private-key-778899', 'max_response_tokens' => 3000];
@@ -237,11 +252,20 @@ namespace {
     use Pelican\AiHelpAssistant\Services\AiClient;
     use Pelican\AiHelpAssistant\Services\AssistantSettings;
     use Pelican\AiHelpAssistant\Services\EggAdvisorService;
+    use Pelican\AiHelpAssistant\Services\SafeReinstallService;
 
     function app(string $class): object { return $GLOBALS['bindings'][$class]; }
     function now(): object { return new class { public function addMinutes(int $minutes): int { return $minutes; } }; }
     function logger(): object { return new class { public function info(string $message, array $context = []): void { $GLOBALS['logs'][] = $message; } }; }
     function storage_path(string $path = ''): string { return '/private-egg-test/' . $path; }
+    function collect(array $values): object
+    {
+        return new class($values) {
+            public function __construct(private array $values) {}
+            public function flatten(): self { $flat = []; array_walk_recursive($this->values, function ($value) use (&$flat) { $flat[] = $value; }); return new self($flat); }
+            public function first(): mixed { return $this->values[0] ?? null; }
+        };
+    }
 
     foreach (['SecretRedactor', 'ScriptDiff', 'EggProposalNormalizer'] as $support) {
         require __DIR__ . '/../src/Support/' . $support . '.php';
@@ -267,7 +291,7 @@ namespace {
         Activity::$events = [];
         $GLOBALS['dbFailure'] = false;
         $GLOBALS['logs'] = [];
-        $GLOBALS['bindings'] = [DaemonServerRepository::class => new DaemonServerRepository(), ReinstallServerService::class => new ReinstallServerService()];
+        $GLOBALS['bindings'] = [DaemonServerRepository::class => new DaemonServerRepository(), ReinstallServerService::class => new ReinstallServerService(), SafeReinstallService::class => new SafeReinstallService()];
         $egg = new Egg();
         $egg->eggVariables = [
             new EggVariable(1, 'SRCDS_APPID', '1180760', false, false),
@@ -356,7 +380,7 @@ namespace {
         check(count($entries) === 1 && $entries[0]['before']['variables']['PLAYERS'] === '4' && $entries[0]['after']['variables']['PLAYERS'] === '8', 'The backup must hold the egg before and after.');
         check(str_contains($entries[0]['before']['script_install'], 'app_update') && $entries[0]['server_before']['startup'] === 'xvfb-run wine ./"Risk of Rain 2.exe"', 'The backup must hold the previous script and server values.');
         check(File::$modes['/private-egg-test/app/private/wingman-ai/egg-backups'] === 0700 && in_array(0600, File::$modes, true), 'Backups must be private.');
-        check(str_contains($message, 'Undo') && ReinstallServerService::class && app(ReinstallServerService::class)->calls === 0, 'No reinstall may run unless requested.');
+        check(str_contains($message, 'Undo') && app(SafeReinstallService::class)->calls === [], 'No reinstall may run unless requested.');
         rejects(fn () => $advisor->apply($server, $user, $id, false), 'expired');
     });
 
@@ -390,7 +414,22 @@ namespace {
         check(backups() === [], 'A busy server had its egg changed.');
         $server->conflict = false;
         $message = $advisor->apply($server, $user, $id, true);
-        check(app(ReinstallServerService::class)->calls === 1 && Activity::$events === ['server:settings.reinstall'] && str_contains($message, 'Reinstall started'), 'The requested reinstall did not run once.');
+        check(app(SafeReinstallService::class)->calls === [[7, false, 'egg']] && str_contains($message, 'Reinstall started'), 'The requested reinstall did not run once.');
+    });
+
+    $runTest('backing up first is checked before the egg changes and passed to the reinstall', function () {
+        [$advisor, $server, $user] = harness();
+        $id = $advisor->propose($server, $user)['id'];
+        app(SafeReinstallService::class)->status = ['possible' => false, 'reason' => 'This server allows 0 backups.'];
+        rejects(fn () => $advisor->apply($server, $user, $id, true, true), 'No backup could be made: This server allows 0 backups.');
+        check(backups() === [] && app(SafeReinstallService::class)->calls === [], 'A missing backup must stop the change before the egg is written.');
+        check($advisor->apply($server, $user, $id, false, true) !== '' && app(SafeReinstallService::class)->calls === [], 'Without a reinstall, "back up first" must not matter.');
+
+        [$advisor, $server, $user] = harness();
+        $id = $advisor->propose($server, $user)['id'];
+        app(SafeReinstallService::class)->failure = \Illuminate\Validation\ValidationException::withMessages(['reinstall' => 'The backup could not be started.']);
+        $message = $advisor->apply($server, $user, $id, true, true);
+        check(count(backups()) === 1 && str_contains($message, 'The reinstall did not start: The backup could not be started.'), 'A failed reinstall start must be reported after the egg change.');
     });
 
     $runTest('a failed database update removes the pending backup', function () {

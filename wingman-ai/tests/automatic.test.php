@@ -532,5 +532,19 @@ namespace {
         }
     });
 
+    test('crash watch defers only crashes inside an unfinished watched start', function () {
+        [$monitor, $server] = resetHarness();
+        check(!$monitor->covers(1, 1000), 'Without a watch, no crash is covered.');
+        begin($monitor, $server);
+        check($monitor->covers(1, 1001) && $monitor->covers(1, 996) && !$monitor->covers(1, 1000 + 180 + 31), 'A watched start covers crashes only within its window.');
+        $state = Cache::get('wingman:auto:state:1');
+        $state['terminal'] = 'healthy';
+        Cache::$data['wingman:auto:state:1'] = $state;
+        check(!$monitor->covers(1, 1001), 'After a healthy start, later crashes belong to crash watch.');
+        check($monitor->ready(), 'Automatic checks must be ready with a database queue.');
+        $GLOBALS['config']['queue.default'] = 'sync';
+        check(!$monitor->ready(), 'A sync queue cannot run crash or install checks.');
+    });
+
     echo "$count automatic coordinator contract tests passed.\n";
 }

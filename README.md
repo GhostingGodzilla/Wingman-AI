@@ -27,6 +27,8 @@ Automatic protection is enabled by default and uses Pelican's background queue w
 
 Basic error checks work without an AI service. For a deeper explanation, configure a trusted hosted or local model in the plugin's settings. The automatic watcher never starts, restarts, stops, or repairs a server. It gives instructions for the user to review and apply. For a Java version that is too old, missing game files, or an unaccepted Minecraft EULA, the report also offers a fix button that runs only after you click it and confirm. Panel admins can also ask the AI to check the server's egg; it suggests a change shown before and after, and nothing is written until an admin applies it (with a backup and Undo).
 
+Wingman also explains crashes that happen while a server is running, checks every install log for hidden failures, can back up a server before reinstalling it, checks for lag with **Check performance**, and lets people ask questions about their server in the **Ask Wingman** box.
+
 Read the [full installation and configuration guide](wingman-ai/README.md) for supported connection settings, access controls, and data handling.
 
 ## Updates and release notes
