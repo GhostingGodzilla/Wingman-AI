@@ -46,6 +46,16 @@ A collapsible **Server health** section shows:
 - **Last 24 hours:** crashes, starts, stops, reinstalls, backups made or failed, and disk growth, from the panel's own activity log (needs `activity.read`).
 - **Usage and limits:** Wingman records CPU, memory, and disk use every 10 minutes through Pelican's scheduler and keeps 7 days of hourly figures in the panel cache. After a day of use it suggests better limits, for example raising memory that keeps running out, lowering a limit the server never comes close to, setting a limit on an unlimited server, or warning when the disk will fill up. Usage tracking can be turned off in the plugin settings.
 
+### Network ports
+
+Game servers need public ports so players outside your network can join. Forward one block of ports once in your router (by default 27000–27099, TCP and UDP) to the machine running Wings. Wingman then gives each game server what it needs from that block:
+
+- The **main port**, plus the next few ports for games that quietly use them (7 Days To Die, Valheim, Unturned, Arma 3, ARK: Survival Evolved).
+- One port for each egg setting that holds a game, query, or Steam port (for example Risk of Rain 2's `QUERY` and `STEAM`). The setting is changed to the new port.
+- Remote admin consoles (RCON, telnet, web panels) are **never** given public ports; they stay inside the server's container.
+
+Ports are set up automatically when a server without ports finishes installing, or by an admin with **Set up ports** under **Server health → Network ports**, which also shows the address players join. Restart the server afterwards. Pelican's own port function creates the ports; Wingman never touches ports that already belong to a server. The block, the address the ports listen on, and automatic setup are in the plugin settings.
+
 ### Change a game setting
 
 People who may read and edit a server's files can describe a change in plain words, like "allow 8 players" or "turn on whitelist". With an AI connection, Wingman:

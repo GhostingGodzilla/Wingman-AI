@@ -6,6 +6,18 @@ This is the update log for Wingman AI. Each release explains what changed and an
 
 <!-- Add new user-facing changes here before the next release. -->
 
+## [0.8.0] - 2026-10-15
+
+### Automatic game ports
+
+- Forward one block of ports once in your router (27000–27099 by default, TCP and UDP). Wingman then gives every game server the ports its game needs from that block, so players outside your network can join.
+- It reads each game's egg: the main port, the extra ports some games quietly use after it, and settings such as Risk of Rain 2's `QUERY` and `STEAM` ports, which are pointed at the new ports.
+- Remote admin consoles (RCON, telnet, web panels) are never given public ports.
+- Happens automatically when a server without ports finishes installing. Admins can also click **Set up ports** under **Server health → Network ports**, which shows the address players join.
+- New settings: the port block, the address ports listen on, and automatic setup.
+
+Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/8.5**.
+
 ## [0.7.2] - 2026-10-15
 
 ### Fewer failed AI answers
@@ -168,7 +180,7 @@ Compatibility remains Pelican Panel **1.0.0-rc.1**, plugin API 1, and PHP **8.4/
 - Added basic error checks and optional hosted or local AI explanations with evidence and suggested fix steps.
 - Added server permissions, credential redaction, and encrypted AI connection settings.
 
-[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/GhostingGodzilla/Wingman-AI/compare/v0.8.0...HEAD
 [0.3.0]: https://github.com/GhostingGodzilla/Wingman-AI/releases/tag/v0.3.0
 [0.2.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/7c9182ffed703a36d182ab188ac2c58d494aa73e
 [0.1.0]: https://github.com/GhostingGodzilla/Wingman-AI/commit/8d759582f80dfd0029a5458f93898c25cb860122

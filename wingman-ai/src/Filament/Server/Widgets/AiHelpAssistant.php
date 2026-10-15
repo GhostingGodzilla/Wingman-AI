@@ -28,6 +28,7 @@ use Pelican\AiHelpAssistant\Services\DailySummaryService;
 use Pelican\AiHelpAssistant\Services\EggAdvisorService;
 use Pelican\AiHelpAssistant\Services\IncidentService;
 use Pelican\AiHelpAssistant\Services\PerformanceService;
+use Pelican\AiHelpAssistant\Services\PortService;
 use Pelican\AiHelpAssistant\Services\RepairService;
 use Pelican\AiHelpAssistant\Services\SafeReinstallService;
 use Pelican\AiHelpAssistant\Services\StartupMonitorService;
@@ -505,7 +506,7 @@ class AiHelpAssistant extends Widget implements HasActions, HasSchemas
         try {
             [$server, $user] = $this->context();
         } catch (Throwable) {
-            return ['backups' => null, 'day' => null, 'usage' => null];
+            return ['backups' => null, 'day' => null, 'usage' => null, 'ports' => null];
         }
         $section = function (callable $read): ?array {
             try {
@@ -519,7 +520,14 @@ class AiHelpAssistant extends Widget implements HasActions, HasSchemas
             'backups' => $section(fn () => app(BackupDoctorService::class)->status($server, $user)),
             'day' => $section(fn () => app(DailySummaryService::class)->summary($server, $user)),
             'usage' => $section(fn () => (bool) (app(AssistantSettings::class)->get()['usage_tracking_enabled'] ?? true) ? app(UsageHistoryService::class)->summary($server) : null),
+            'ports' => $section(fn () => app(PortService::class)->status($server, $user)),
         ];
+    }
+
+    public function setUpPorts(): void
+    {
+        [$server, $user] = $this->context();
+        $this->runTask('Ports', fn () => app(PortService::class)->assign($server, $user));
     }
 
     public function backupNow(): void

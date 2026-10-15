@@ -54,7 +54,7 @@ final class FakeWidget
     protected function fixSummary(array $offer): string { return 'fix summary'; }
     protected function canAsk(): bool { return $this->state['canAsk']; }
     protected function eggTools(): ?array { return $this->state['eggTools']; }
-    protected function serverHealth(): array { return $this->state['health'] ?? ['backups' => null, 'day' => null, 'usage' => null]; }
+    protected function serverHealth(): array { return $this->state['health'] ?? ['backups' => null, 'day' => null, 'usage' => null, 'ports' => null]; }
     protected function canChangeSettings(): bool { return $this->state['canChange'] ?? false; }
     public function render(string $file, array $vars): string
     {
@@ -86,10 +86,11 @@ $scenarios = [
         'state' => ['reinstallStatus' => ['pending' => ['backup' => 'u', 'since' => 't'], 'notice' => null], 'fixOffer' => ['type' => 'reinstall'], 'canAsk' => true, 'canChange' => true,
             'health' => ['backups' => ['limit' => 0, 'count' => 0, 'last' => null, 'scheduled' => false, 'issues' => ['This server cannot keep any backups: its backup limit is 0.'], 'can_backup' => false, 'can_schedule' => false],
                 'day' => ['lines' => ['2 crashes', '3 starts or restarts'], 'quiet' => false],
-                'usage' => ['running_hours' => 30, 'memory_peak_mb' => 900, 'cpu_peak' => 80, 'cpu_average' => 20, 'disk_mb' => 1500, 'disk_growth_mb_per_day' => 5, 'suggestions' => ['This server has no memory limit.']]],
+                'usage' => ['running_hours' => 30, 'memory_peak_mb' => 900, 'cpu_peak' => 80, 'cpu_average' => 20, 'disk_mb' => 1500, 'disk_growth_mb_per_day' => 5, 'suggestions' => ['This server has no memory limit.']],
+                'ports' => ['ports' => [], 'join' => null, 'can_assign' => true, 'range' => '27000–27099']],
             'eggTools' => ['last_change' => ['applied_at' => '2026-10-15T01:00:00+00:00', 'fields' => ['script_install'], 'undoable' => true]]],
         'expect' => ['Crash while running', 'Wingman can fix this', '[action applyFixAction]', 'Backing up before reinstalling', 'Ask Wingman', 'You asked: Q?', 'Egg check', '[action applyEggFixAction]', '[action undoEggFixAction]', 'Check these carefully',
-            'Server health', '1 backup warning', 'backup limit is 0', 'Last 24 hours', '2 crashes · 3 starts or restarts.', 'Usage and limits', 'memory peaked at 900 MB', 'Change a game setting', 'File: <span class="font-mono">server.properties', '+ white-list=true', '[action applyConfigAction]'],
+            'Server health', '1 backup warning', 'has no network ports', 'Set up ports', 'from 27000–27099?', 'backup limit is 0', 'Last 24 hours', '2 crashes · 3 starts or restarts.', 'Usage and limits', 'memory peaked at 900 MB', 'Change a game setting', 'File: <span class="font-mono">server.properties', '+ white-list=true', '[action applyConfigAction]'],
     ],
     'manual performance report and notice' => [
         'vars' => ['report' => $report + ['kind' => 'performance'], 'autoReport' => $report + ['kind' => 'install'], 'autoStatus' => ['status' => 'idle'], 'eggProposal' => ['id' => 'x', 'summary' => 'No problem', 'reason' => '', 'reinstall' => false, 'warnings' => [], 'egg_name' => 'E', 'servers_using' => 2, 'copies_script' => false, 'changes' => []], 'answer' => null,
@@ -97,8 +98,9 @@ $scenarios = [
         'state' => ['reinstallStatus' => ['pending' => null, 'notice' => ['message' => 'The backup failed, so Wingman did not reinstall the server.', 'at' => 't']], 'fixOffer' => null, 'canAsk' => true,
             'eggTools' => ['last_change' => ['applied_at' => '2026-10-15T01:00:00+00:00', 'fields' => ['startup'], 'undoable' => false]], 'canChange' => true,
             'health' => ['backups' => ['limit' => 3, 'count' => 2, 'last' => '2026-10-14T04:07:00+00:00', 'scheduled' => false, 'issues' => ['No automatic backups are scheduled.'], 'can_backup' => true, 'can_schedule' => true],
-                'day' => ['lines' => [], 'quiet' => true], 'usage' => null]],
-        'expect' => ['Performance check', 'The backup failed', 'did not find a problem in the egg', 'cannot be undone automatically', 'Nothing happened', '2 of 3 backups kept', 'Newest:', 'Back up now', 'Back up every night', 'does not need a change'],
+                'day' => ['lines' => [], 'quiet' => true], 'usage' => null,
+                'ports' => ['ports' => [27000, 27001, 27002], 'join' => 'ghostingsquad.duckdns.org:27000', 'can_assign' => false, 'range' => '27000–27099']]],
+        'expect' => ['Performance check', 'The backup failed', 'did not find a problem in the egg', 'cannot be undone automatically', 'Nothing happened', '2 of 3 backups kept', 'Players join at <span class="font-mono">ghostingsquad.duckdns.org:27000</span>. Ports: 27000, 27001, 27002.', 'Newest:', 'Back up now', 'Back up every night', 'does not need a change'],
     ],
 ];
 $failed = 0;

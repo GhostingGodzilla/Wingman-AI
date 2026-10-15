@@ -64,6 +64,14 @@ class AiHelpAssistantPlugin implements Plugin, HasPluginSettings
                     Toggle::make('config_helper_enabled')->label('Let people change game settings with AI help')->inline(false)
                         ->helperText('Needs file read and edit permission. Every change is shown first and the old file is kept as a .bak copy.'),
                 ]),
+            Section::make('Network ports')->description('Forward this whole range (TCP and UDP) to this machine in your router once. Wingman then gives each game server the ports it needs from it. Remote admin consoles (RCON, telnet, web panels) stay private.')
+                ->schema([
+                    Toggle::make('ports_auto')->label('Give servers without ports their ports automatically after install')->inline(false),
+                    TextInput::make('port_range_start')->label('First port')->numeric()->minValue(1024)->maxValue(65535)->required(),
+                    TextInput::make('port_range_end')->label('Last port')->numeric()->minValue(1024)->maxValue(65535)->required(),
+                    TextInput::make('port_ip')->label('Address the ports listen on')->required()
+                        ->helperText('0.0.0.0 means every network card on this machine, which suits a home server.'),
+                ]),
             Section::make('Usage tracking')
                 ->schema([
                     Toggle::make('usage_tracking_enabled')->label('Record CPU, memory, and disk use every 10 minutes')->inline(false)

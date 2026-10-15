@@ -126,6 +126,13 @@ namespace Pelican\AiHelpAssistant\Services {
         public function summary(\App\Models\Server $server): array { $this->calls++; return ['running_hours' => 2, 'suggestions' => ['Learning.']]; }
     }
 
+    class PortService
+    {
+        public array $calls = [];
+        public function status(\App\Models\Server $server, \App\Models\User $user): ?array { $this->calls[] = 'status'; return ['ports' => [], 'join' => null, 'can_assign' => true, 'range' => '27000–27099']; }
+        public function assign(\App\Models\Server $server, ?\App\Models\User $user): string { $this->calls[] = 'assign'; return 'Ports 27000–27002 are set up.'; }
+    }
+
     class ConfigHelperService
     {
         public array $calls = [];
@@ -280,6 +287,7 @@ namespace {
     use Pelican\AiHelpAssistant\Services\EggAdvisorService;
     use Pelican\AiHelpAssistant\Services\IncidentService;
     use Pelican\AiHelpAssistant\Services\PerformanceService;
+    use Pelican\AiHelpAssistant\Services\PortService;
     use Pelican\AiHelpAssistant\Services\RepairService;
     use Pelican\AiHelpAssistant\Services\SafeReinstallService;
     use Pelican\AiHelpAssistant\Services\UsageHistoryService;
@@ -325,7 +333,7 @@ namespace {
         $manual = new StartupMonitorService();
         $GLOBALS['ui_services'] = [AutomaticStartupService::class => $automatic, StartupMonitorService::class => $manual, AssistantSettings::class => new AssistantSettings(), RepairService::class => new RepairService(), EggAdvisorService::class => new EggAdvisorService(),
             IncidentService::class => new IncidentService(), SafeReinstallService::class => new SafeReinstallService(), AskService::class => new AskService(), PerformanceService::class => new PerformanceService(),
-            BackupDoctorService::class => new BackupDoctorService(), DailySummaryService::class => new DailySummaryService(), UsageHistoryService::class => new UsageHistoryService(), ConfigHelperService::class => new ConfigHelperService()];
+            BackupDoctorService::class => new BackupDoctorService(), DailySummaryService::class => new DailySummaryService(), UsageHistoryService::class => new UsageHistoryService(), ConfigHelperService::class => new ConfigHelperService(), PortService::class => new PortService()];
         Notification::$sent = [];
 
         return [new AiHelpAssistant(), $automatic, $manual, $server];
@@ -637,6 +645,17 @@ namespace {
         $helper->failure = new RuntimeException('secret-file-content');
         $widget->proposeConfig();
         uiExpect($widget->configProposal === null && !str_contains(json_encode(Notification::$sent), 'secret-file-content'), 'Failures must not leak details.');
+    };
+
+    $tests['ports appear in server health and only the button sets them up'] = static function (): void {
+        [$widget] = uiFixture();
+        $ports = $GLOBALS['ui_services'][PortService::class];
+        $health = (new ReflectionMethod($widget, 'serverHealth'))->invoke($widget);
+        uiExpect($health['ports']['can_assign'] === true && $health['ports']['join'] === null, 'Port status must be part of server health.');
+        for ($i = 0; $i < 3; $i++) { $widget->refreshAutomaticDiagnosis(); }
+        uiExpect(!in_array('assign', $ports->calls, true), 'Polling set up ports.');
+        $widget->setUpPorts();
+        uiExpect(in_array('assign', $ports->calls, true) && end(Notification::$sent) === ['title' => 'Ports', 'body' => 'Ports 27000–27002 are set up.', 'status' => 'success'], 'The button must set up ports and report it.');
     };
 
     $failed = 0;

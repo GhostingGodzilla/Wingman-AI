@@ -4,6 +4,7 @@ namespace Pelican\AiHelpAssistant\Listeners;
 
 use App\Events\Server\Installed;
 use Pelican\AiHelpAssistant\Services\IncidentService;
+use Pelican\AiHelpAssistant\Services\PortService;
 use Throwable;
 
 /** Queue an install-log check after every install or reinstall. */
@@ -15,6 +16,14 @@ class ObserveInstall
             app(IncidentService::class)->installed($event->server, $event->successful);
         } catch (Throwable $exception) {
             logger()->warning('Wingman install check could not be queued.', ['exception_type' => $exception::class]);
+        }
+        if ($event->successful) {
+            try {
+                // A new server without ports gets them as soon as its install finishes.
+                app(PortService::class)->autoAssign($event->server);
+            } catch (Throwable $exception) {
+                logger()->warning('Wingman automatic port setup failed.', ['exception_type' => $exception::class]);
+            }
         }
     }
 }

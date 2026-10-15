@@ -131,7 +131,7 @@
         @php
             $health = $this->serverHealth();
         @endphp
-        @if ($health['backups'] || $health['day'] || $health['usage'])
+        @if ($health['backups'] || $health['day'] || $health['usage'] || $health['ports'])
             <details wire:ignore.self style="margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid rgba(127, 127, 127, 0.25);" aria-label="Server health" @if ($health['backups'] && $health['backups']['issues'] !== []) open @endif>
                 <summary class="cursor-pointer text-sm font-semibold text-gray-950 dark:text-white">
                     Server health
@@ -139,6 +139,25 @@
                         <span class="text-xs font-normal" style="color: rgb(217, 119, 6);">&middot; {{ count($health['backups']['issues']) }} backup {{ count($health['backups']['issues']) === 1 ? 'warning' : 'warnings' }}</span>
                     @endif
                 </summary>
+
+                @if ($health['ports'])
+                    @php
+                        $ports = $health['ports'];
+                    @endphp
+                    <div class="mt-3">
+                        <p class="text-sm font-semibold text-gray-950 dark:text-white">Network ports</p>
+                        @if ($ports['join'])
+                            <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">Players join at <span class="font-mono">{{ $ports['join'] }}</span>. Ports: {{ implode(', ', $ports['ports']) }}.</p>
+                        @else
+                            <p class="mt-1 text-sm" style="color: rgb(217, 119, 6);">&bull; This server has no network ports, so nobody outside this machine can join the game.</p>
+                        @endif
+                        @if ($ports['can_assign'])
+                            <div class="mt-2">
+                                <x-filament::button size="sm" wire:click="setUpPorts" wire:confirm="Give this server the ports its game needs from {{ $ports['range'] }}? Restart the server afterwards." wire:loading.attr="disabled" wire:target="setUpPorts">Set up ports</x-filament::button>
+                            </div>
+                        @endif
+                    </div>
+                @endif
 
                 @if ($health['backups'])
                     @php

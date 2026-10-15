@@ -47,6 +47,7 @@ jobs:
           php wingman-ai/tests/php/incident_rules_test.php
           php wingman-ai/tests/php/template_test.php
           php wingman-ai/tests/php/health_rules_test.php
+          php wingman-ai/tests/php/ports_rules_test.php
           php wingman-ai/tests/php/automatic_state_test.php
           php wingman-ai/tests/integration/run.php
           php wingman-ai/tests/monitor.test.php
@@ -60,6 +61,7 @@ jobs:
           php wingman-ai/tests/ask_performance.test.php
           php wingman-ai/tests/health.test.php
           php wingman-ai/tests/config_helper.test.php
+          php wingman-ai/tests/ports.test.php
           node --test wingman-ai/tests/js/startup-monitor.test.cjs
       - name: Check installer shell syntax
         run: |

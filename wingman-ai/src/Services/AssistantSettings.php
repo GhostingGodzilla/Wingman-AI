@@ -58,6 +58,10 @@ class AssistantSettings
             'ask_daily_limit' => ['required', 'integer', 'min:1', 'max:1000'],
             'config_helper_enabled' => ['required', 'boolean'],
             'usage_tracking_enabled' => ['required', 'boolean'],
+            'ports_auto' => ['required', 'boolean'],
+            'port_range_start' => ['required', 'integer', 'min:1024', 'max:65535'],
+            'port_range_end' => ['required', 'integer', 'min:1024', 'max:65535', 'gte:port_range_start'],
+            'port_ip' => ['required', 'ip'],
             'ai_enabled' => ['required', 'boolean'],
             'base_url' => ['nullable', 'string', 'max:1000'],
             'model' => ['nullable', 'string', 'max:200'],
@@ -90,11 +94,15 @@ class AssistantSettings
             ]);
         }
 
-        foreach (['watch_seconds', 'daily_limit', 'max_response_tokens', 'auto_daily_limit', 'auto_cooldown_seconds', 'ask_daily_limit'] as $field) {
+        foreach (['watch_seconds', 'daily_limit', 'max_response_tokens', 'auto_daily_limit', 'auto_cooldown_seconds', 'ask_daily_limit', 'port_range_start', 'port_range_end'] as $field) {
             $settings[$field] = (int) $settings[$field];
         }
-        foreach (['enabled', 'ai_enabled', 'automatic_enabled', 'crash_watch_enabled', 'install_check_enabled', 'backup_before_reinstall', 'ask_enabled', 'config_helper_enabled', 'usage_tracking_enabled'] as $field) {
+        foreach (['enabled', 'ai_enabled', 'automatic_enabled', 'crash_watch_enabled', 'install_check_enabled', 'backup_before_reinstall', 'ask_enabled', 'config_helper_enabled', 'usage_tracking_enabled', 'ports_auto'] as $field) {
             $settings[$field] = (bool) $settings[$field];
+        }
+
+        if ($settings['port_range_end'] - $settings['port_range_start'] > 999) {
+            throw \Illuminate\Validation\ValidationException::withMessages(['port_range_end' => 'The port range can hold at most 1000 ports.']);
         }
 
         $path = $this->path();
